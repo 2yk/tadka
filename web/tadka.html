@@ -124,6 +124,7 @@
   .rarity{font-size:10px; text-transform:uppercase; letter-spacing:.08em; padding:1px 6px; border-radius:4px; margin-left:6px}
   .rar-common{background:#2a3340; color:#9fb4c9} .rar-uncommon{background:#1f3a2a; color:#8fd6a6}
   .rar-rare{background:#3a2b12; color:var(--accent)} .rar-blend{background:#2c1f3a; color:#c8a6ea}
+  .rar-festival{background:#3a1226; color:#f2a8cf}
   .buy{min-width:74px; text-align:center; white-space:nowrap}
   .owned-row{display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:13px;
              padding:8px 10px; background:var(--panel2); border:1px solid var(--line); border-radius:9px}
@@ -235,6 +236,14 @@ const RECIPE={
   three_kind:{flavor:30,heat:3}, straight:{flavor:30,heat:4}, flush:{flavor:35,heat:4},
   full_house:{flavor:40,heat:4}, four_kind:{flavor:60,heat:7}, straight_flush:{flavor:100,heat:8}
 };
+// recipe leveling — Festival Cards raise a recipe's base flavor & heat for the run.
+// This is the exponential-scaling engine (Balatro's planet cards): leveled base × utensil
+// multipliers is what lets late-city scores reach the big targets. Level 1 = no bonus.
+const LEVEL_BONUS={
+  high_card:{flavor:4,heat:1}, pair:{flavor:8,heat:1}, two_pair:{flavor:12,heat:1},
+  three_kind:{flavor:16,heat:2}, straight:{flavor:20,heat:2}, flush:{flavor:22,heat:2},
+  full_house:{flavor:28,heat:3}, four_kind:{flavor:40,heat:4}, straight_flush:{flavor:70,heat:5}
+};
 const GENERIC={high_card:'High Card',pair:'Pair',two_pair:'Two Pair',three_kind:'Three of a Kind',
   straight:'Straight',flush:'Flush',full_house:'Full House',four_kind:'Four of a Kind',straight_flush:'Straight Flush'};
 
@@ -287,6 +296,19 @@ const BLENDS=[
 ];
 const BLEND_BY_ID=Object.fromEntries(BLENDS.map(b=>[b.id,b]));
 
+// Festival Cards (planet-analog): each permanently levels one recipe for the run.
+// This is the scaling engine — leveled base × utensils is how late-city scores reach the big targets.
+const FESTIVALS=[
+  {id:'fest_pair',    pattern:'pair',          name:'Sankranti',  cost:3},
+  {id:'fest_three',   pattern:'three_kind',    name:'Onam',       cost:3},
+  {id:'fest_straight',pattern:'straight',      name:'Baisakhi',   cost:3},
+  {id:'fest_flush',   pattern:'flush',         name:'Holi',       cost:3},
+  {id:'fest_full',    pattern:'full_house',    name:'Diwali',     cost:3},
+  {id:'fest_four',    pattern:'four_kind',     name:'Pongal',     cost:4},
+  {id:'fest_sflush',  pattern:'straight_flush',name:'Kumbh Mela', cost:4}
+];
+const FEST_BY_ID=Object.fromEntries(FESTIVALS.map(f=>[f.id,f]));
+
 // city palates (spec §7). Different shapes on purpose.
 const PALATES={
   kochi:{city:'kochi',label:'Sour ingredients give +50% intensity as flavor',perCardFlavorPct:{family:'sour',pct:50}},
@@ -302,7 +324,7 @@ const CRITICS={
 const CITIES=[
   {id:'kochi', name:'Kochi 🇮🇳',  targets:[300,800,1200],     critic:'minimalist'},
   {id:'tokyo', name:'Tokyo 🇯🇵',  targets:[3500,6000,11000],  critic:'traditionalist'},
-  {id:'naples',name:'Naples 🇮🇹', targets:[18000,30000,50000],critic:'random'}
+  {id:'naples',name:'Naples 🇮🇹', targets:[18000,30000,50000],critic:'traditionalist'}
 ];
 const SERVICE_NAMES=['Lunch Rush','Dinner Rush','The Food Critic'];
 
@@ -374,9 +396,12 @@ function condMet(cond,c){
 function scoreDish(playedCards, ctx){
   const {pattern,scoring}=bestPattern(playedCards);
   const base=RECIPE[pattern];
-  const S={flavor:base.flavor, heat:base.heat, coins:0};
+  const lvl=ctx.kitchenLevel||1;
+  const lb=LEVEL_BONUS[pattern]||{flavor:0,heat:0};
+  const baseF=base.flavor+(lvl-1)*lb.flavor, baseH=base.heat+(lvl-1)*lb.heat;
+  const S={flavor:baseF, heat:baseH, coins:0};
   const steps=[]; const log=(t,cls)=>steps.push({t,cls});
-  log(`${GENERIC[pattern]} · base ${base.flavor} flavor × ${base.heat} heat`,'');
+  log(`${GENERIC[pattern]}${lvl>1?' Lv'+lvl:''} · base ${baseF} flavor × ${baseH} heat`,'');
 
   // dish-level palate (Naples flush)
   if(ctx.palate&&ctx.palate.dishFlavorIfPattern&&ctx.palate.dishFlavorIfPattern.pattern===pattern){
@@ -446,7 +471,7 @@ function newRun(seedStr){
   const run={
     seed:seedStr, rng, naplesCritic,
     cityIndex:0, serviceIndex:0,
-    coins:4, utensils:[], blends:[],
+    coins:4, utensils:[], blends:[], kitchenLevel:1,
     history:[], status:'playing',
     // per-service (filled by startService)
     deck:[], hand:[], target:0, score:0, cooksLeft:4, swapsLeft:3, dishesPlayed:0, critic:null
@@ -471,7 +496,7 @@ function drawUp(run, to=8){ while(run.hand.length<to && run.deck.length) run.han
 
 function ctxFor(run){
   return {
-    palate:PALATES[cityOf(run).id], utensils:run.utensils, critic:run.critic,
+    palate:PALATES[cityOf(run).id], utensils:run.utensils, critic:run.critic, kitchenLevel:run.kitchenLevel,
     isFirstDish:run.dishesPlayed===0, isLastDish:run.cooksLeft===1
   };
 }
@@ -502,10 +527,10 @@ function doSwap(run, idxs){
 function bankService(run){
   const unused=run.cooksLeft;
   const interest=Math.min(5, Math.floor(run.coins/5));
-  const earned=3+unused;
+  const earned=4+unused;
   run.coins+=earned+interest;
   run.history.push({city:cityOf(run).name, svc:SERVICE_NAMES[run.serviceIndex], score:run.score, target:run.target, win:true});
-  return {base:3, unused, interest, earned:earned+interest};
+  return {base:4, unused, interest, earned:earned+interest};
 }
 function recordLoss(run){
   run.history.push({city:cityOf(run).name, svc:SERVICE_NAMES[run.serviceIndex], score:run.score, target:run.target, win:false});
@@ -524,7 +549,11 @@ function isFinalService(run){ return run.cityIndex===2 && run.serviceIndex===2; 
 function rollOffers(run){
   const offers=[];
   for(let k=0;k<3;k++){
-    if(run.rng.next()<0.30){
+    const roll=run.rng.next();
+    if(roll<0.28){
+      const f=run.rng.pick(FESTIVALS);
+      offers.push({kind:'festival', id:f.id, name:f.name, cost:f.cost, pattern:f.pattern, rarity:'festival'});
+    }else if(roll<0.46){
       const b=run.rng.pick(BLENDS);
       offers.push({kind:'blend', id:b.id, name:b.name, cost:b.cost, desc:b.desc, rarity:'blend'});
     }else{
@@ -596,6 +625,11 @@ function startRun(seed){ RUN=newRun(seed); sel.clear(); selUtil=-1; screen='serv
 /* ---------- service ---------- */
 function selectedCards(){ return [...sel].map(i=>RUN.hand[i]); }
 function maxSelect(){ return (RUN.critic&&RUN.critic.max_cards)?RUN.critic.max_cards:5; }
+function levelsNote(r){
+  const kl=r.kitchenLevel||1;
+  if(kl<=1) return '';
+  return `<div class="note" style="color:#f2a8cf">🎉 Kitchen Lv ${kl} — every recipe's base score is boosted</div>`;
+}
 
 function renderService(){
   const r=RUN, city=cityOf(r), pal=PALATES[city.id];
@@ -631,6 +665,7 @@ function renderService(){
       </div>
       <div class="note palate">🍽 Palate — ${pal.label}</div>
       ${r.critic?`<div class="note critic">👤 ${r.critic.name} — ${r.critic.rule}</div>`:''}
+      ${levelsNote(r)}
     </div>
 
     <div class="card-panel" style="display:flex;flex-direction:column;gap:8px">
@@ -735,11 +770,18 @@ function useBlend(i){
 }
 
 function onServiceWon(){
+  const wasBoss=RUN.serviceIndex===2;
   const bank=bankService(RUN);
   if(isFinalService(RUN)){ RUN.status='won'; screen='summary'; render(); return; }
+  // boss reward — a Festival Feast: +2 levels to your most-cooked recipe this run
+  let bossMsg='';
+  if(wasBoss){
+    RUN.kitchenLevel+=3;
+    bossMsg=` · 🎉 Boss reward: Kitchen → Lv ${RUN.kitchenLevel}`;
+  }
   offers=rollOffers(RUN); selUtil=-1;
   screen='bazaar'; render();
-  flash(`Service cleared! +${bank.earned} 🪙 (base 3, ${bank.unused} unused cook${bank.unused===1?'':'s'}, interest ${bank.interest})`);
+  flash(`Service cleared! +${bank.earned} 🪙 (base ${bank.base}, ${bank.unused} unused, interest ${bank.interest})${bossMsg}`);
 }
 
 /* ---------- bazaar ---------- */
@@ -750,12 +792,13 @@ function renderBazaar(){
   root.innerHTML=`
     <div class="hdr">
       <div class="service-line"><span class="city">🛒 The Bazaar</span><span class="svc">coins ${r.coins} 🪙</span></div>
-      <div class="dim note">Buy utensils &amp; blends, then travel on. Up next: <b>${ns.city.name} · ${SERVICE_NAMES[ns.svc]}</b> (target ${fmt(ns.city.targets[ns.svc])}).</div>
+      <div class="dim note">Buy utensils, blends &amp; <b>Festivals</b> (level up recipes), then travel on. Up next: <b>${ns.city.name} · ${SERVICE_NAMES[ns.svc]}</b> (target ${fmt(ns.city.targets[ns.svc])}).</div>
     </div>
     <div class="card-panel" style="display:flex;flex-direction:column;gap:9px">
       <div class="spread"><div class="eyebrow">Offers</div><button class="btn sell" id="rerollBtn" ${r.coins<2?'disabled':''}>Reroll · 2🪙</button></div>
       <div id="offerList" style="display:flex;flex-direction:column;gap:8px">${renderOffers()}</div>
     </div>
+    ${renderLevelsPanel()}
     <div class="card-panel" style="display:flex;flex-direction:column;gap:8px">
       <div class="eyebrow">Your utensils (${r.utensils.length}/5) — sell for half</div>
       <div style="display:flex;flex-direction:column;gap:6px" id="ownList">${renderOwned()}</div>
@@ -768,21 +811,32 @@ function renderBazaar(){
   [...document.querySelectorAll('[data-sell]')].forEach(el=>el.onclick=()=>sellUtil(+el.dataset.sell));
   $('rerollBtn').onclick=()=>{ if(RUN.coins>=2){RUN.coins-=2; offers=rollOffers(RUN); render();} };
   $('nextBtn').onclick=()=>{ advance(RUN); if(RUN.status==='won'){screen='summary';} else {sel.clear();selUtil=-1;screen='service';} render(); };
-  queueTips([TIPS.bazaar]);
+  const bzTips=[TIPS.bazaar];
+  if(offers.some(o=>o.kind==='festival')) bzTips.push(TIPS.festival);
+  queueTips(bzTips);
 }
 function renderOffers(){
   const r=RUN;
   return offers.map((o,i)=>{
-    const owned=o.kind==='utensil'?false:false;
     const full=o.kind==='utensil'&&r.utensils.length>=5;
     const blendFull=o.kind==='blend'&&r.blends.length>=3;
     const cant=r.coins<o.cost||full||blendFull;
     let label=`Buy · ${o.cost}🪙`; if(full) label='Slots full'; if(blendFull) label='Blends full';
+    let desc=o.desc;
+    if(o.kind==='festival'){ const kl=r.kitchenLevel; desc=`Level up your <b>Kitchen</b>: Lv ${kl} → <b>Lv ${kl+1}</b> — bigger base score for every recipe, all run`; }
     return `<div class="offer">
-      <div class="oi"><div class="on">${o.name}<span class="rarity rar-${o.rarity}">${o.rarity}</span></div><div class="od">${o.desc}</div></div>
+      <div class="oi"><div class="on">${o.name}<span class="rarity rar-${o.rarity}">${o.rarity}</span></div><div class="od">${desc}</div></div>
       <button class="btn buy" data-buy="${i}" ${cant?'disabled':''}>${label}</button>
     </div>`;
   }).join('') || '<div class="dim">No offers.</div>';
+}
+function renderLevelsPanel(){
+  const kl=RUN.kitchenLevel||1;
+  const body = kl>1
+    ? `<span class="chip"><b>Kitchen</b> Lv ${kl}</span> <span class="dim" style="font-size:12px">every recipe's base score is boosted</span>`
+    : '<span class="dim" style="font-size:12px">Kitchen Lv 1 — buy a <b>Festival</b> above to level up every recipe for this run.</span>';
+  return `<div class="card-panel" style="display:flex;flex-direction:column;gap:7px">
+    <div class="eyebrow">🎉 Kitchen level (this run)</div><div class="chips">${body}</div></div>`;
 }
 function renderOwned(){
   const r=RUN;
@@ -795,6 +849,9 @@ function buyOffer(i){
   if(o.kind==='utensil'){
     if(r.utensils.length>=5) return;
     r.coins-=o.cost; r.utensils.push({...UTIL_BY_ID[o.id]});
+  }else if(o.kind==='festival'){
+    r.coins-=o.cost; r.kitchenLevel++;
+    flash(`${o.name}! Kitchen level up → Lv ${r.kitchenLevel}`);
   }else{
     if(r.blends.length>=3) return;
     r.coins-=o.cost; r.blends.push({...BLEND_BY_ID[o.id]});
@@ -876,6 +933,7 @@ const TIPS={
   recipe:{key:'recipe',title:'📈 Recipe & score',body:"The line above the buttons names your recipe and shows its projected score — that's <b>flavor × heat</b>. Add or remove cards to watch it change. Reaching for a bigger recipe is how scores explode."},
   critic:{key:'critic',title:'👤 Boss: the Food Critic',body:"Every city's 3rd service is a boss with a special rule shown in <b>red</b> (e.g. max 3 ingredients, or Sweet is debuffed), and a bigger target. Adapt your dish to obey the rule."},
   bazaar:{key:'bazaar',title:'🛒 The Bazaar',body:"Between services, spend <b>coins</b>. <b>Utensils</b> are permanent boosts that fire on every dish — equip up to 5, they trigger left→right so order matters. <b>Blends</b> are one-time helpers. <b>Reroll</b> (2🪙) for new offers, or <b>Sell</b> utensils you're done with, then Travel on."},
+  festival:{key:'festival',title:'🎉 Festivals — the scaling engine',body:"The pink <b>Festival</b> offers permanently <b>level up your Kitchen</b> — every recipe gets a bigger base score, for the whole run. Stacking Festivals is how you reach the big late-city targets. Beating a boss levels your Kitchen further for free."},
   blend:{key:'blend',title:'🧪 Using a spice blend',body:"You own a blend! On the cook screen, first tap the ingredient(s) you want to change, <b>then tap the blend</b> to apply it. It's used up after one go."},
   summary:{key:'summary',title:'🔁 Run over — go again',body:"A run ends when you clear all 3 cities or miss a target. <b>Play again</b> for a fresh run, or <b>Replay this seed</b> to retry the identical run. Share a seed with a friend and you both play the exact same cards."}
 };
@@ -927,6 +985,7 @@ function openHelp(){
     <ul>
       <li><b>Utensils</b> (max 5): permanent boosts firing on every dish, left→right — order matters.</li>
       <li><b>Blends</b>: one-time helpers. Tap ingredient(s), then tap the blend.</li>
+      <li><b>Festivals</b> 🎉: permanently <b>level up your Kitchen</b> — every recipe's base score grows, all run. Buy in the Bazaar; bosses grant free levels. This is how you reach the big late-city targets.</li>
     </ul>
     <h4>Palates &amp; critics</h4>
     <ul>

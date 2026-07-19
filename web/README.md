@@ -34,9 +34,10 @@ Add it to your Home Screen (Share → Add to Home Screen) for a full-screen, app
 - **All 9 recipes** with regional dish names per city (Chaat/Onigiri/Bruschetta, Royal Biryani/Kaiseki/Nonna's Feast…).
 - **20 utensils** (effect DSL), max 5 equipped, fire left→right.
 - **6 spice blends** (consumables): Chili Oil, Sea Salt, Fermentation, Sun-Dry, Whetstone, Mise en Place.
-- **3 city palates** and **2 critics** (The Minimalist, The Traditionalist; Naples rolls one of the two).
-- **Bazaar** between services: 3 offers, reroll (2🪙), sell utensils at half.
-- **Economy:** 3 base + 1 per unused cook + interest (1 per 5 coins, cap 5).
+- **Festivals 🎉 (recipe leveling) — the scaling engine.** Festival offers in the Bazaar permanently raise your **Kitchen level**; every recipe's base flavor & heat grow for the rest of the run. Bosses grant free Kitchen levels. This compounding (leveled base × utensil multipliers) is what makes the big late-city targets actually reachable — without it the run caps at ~15k and Naples is impossible.
+- **3 city palates** and **2 critics** (The Minimalist at Kochi's boss; The Traditionalist at Tokyo's boss and the Naples finale).
+- **Bazaar** between services: 3 offers (utensils / blends / festivals), reroll (2🪙), sell utensils at half.
+- **Economy:** 4 base + 1 per unused cook + interest (1 per 5 coins, cap 5).
 - **Seeded RNG:** same seed → identical run (great for bug reports & the future Daily Route). Type a seed on the start screen, or "Replay this seed" from the summary.
 - **Run summary:** per-service scores, cause of death, seed, Play Again / Replay.
 - **Onboarding for testers:** a one-time coach tip appears the first time you reach each step (welcome → cook → recipe/score → boss critic → bazaar → using a blend → summary), each with "Got it" / "Skip all tips". A **?** button on every screen opens a full **How to Play** sheet any time; it also has "Show step tips again" to reset. Seen-state is stored per-browser (`localStorage`), so each tester sees each tip once.
@@ -44,8 +45,24 @@ Add it to your Home Screen (Share → Add to Home Screen) for a full-screen, app
 ## Tuning is data, not code
 
 City score targets live in the `CITIES` array (search `§CONTENT`). Utensil numbers live in `UTENSILS`.
-Palates in `PALATES`, critics in `CRITICS`. Change a number, reload — no logic touched. This is where
-your first-run tuning pass happens.
+Palates in `PALATES`, critics in `CRITICS`, recipe-level scaling in `LEVEL_BONUS`. Change a number,
+reload — no logic touched. This is where your first-run tuning pass happens.
+
+## Balance (sim-verified in the browser)
+
+The engine doubles as a headless balance simulator — run it from the browser console against the live
+`scoreDish`/`rollOffers`. Findings that shaped this build:
+
+- **Kochi Minimalist boss** retuned 2000 → 1200 (max-3-cards caps you at Three-of-a-Kind, so an
+  all-flavor build was mathematically capped at ~1572 — unwinnable). Now: any heat source ≈ wins,
+  the naive build is a fair ~27%.
+- **The original targets assumed exponential scaling the engine lacked** — a maxed build capped ~15k,
+  so Naples (18k–50k) was impossible for everyone. Fixed by adding **recipe leveling (Festivals)**:
+  a full-run sim (300 runs, greedy bot, no blends) now completes **~23% at the original targets**, with
+  a clean curve (Tokyo Lunch ~100% → Naples finale ~46% of those who reach it). Skilled humans beat that.
+- **Naples' "random" critic** could roll Minimalist on a 50k target (unwinnable at any level) — the
+  finale is now fixed to The Traditionalist.
+- Economy base income 3 → 4 so a build *and* Festivals are both affordable; boss reward = +3 Kitchen levels.
 
 ## How this ports to the Flutter/Flame build (M1)
 
