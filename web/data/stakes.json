@@ -1,0 +1,10 @@
+[
+  { "id": 1, "name": "Paprika",         "chili_icon": "🌶️",         "modifiers": [] },
+  { "id": 2, "name": "Jalapeño",        "chili_icon": "🌶️",         "modifiers": [ { "type": "service_reward_zero", "value": "lunch" } ] },
+  { "id": 3, "name": "Serrano",         "chili_icon": "🌶️🌶️",       "modifiers": [ { "type": "target_scale", "from_city": 3, "pct": 25 } ] },
+  { "id": 4, "name": "Cayenne",         "chili_icon": "🌶️🌶️",       "modifiers": [ { "type": "swaps_delta", "value": -1 } ] },
+  { "id": 5, "name": "Bird's Eye",      "chili_icon": "🌶️🌶️🌶️",     "modifiers": [ { "type": "shop_inflation_per_city", "value": 1 } ] },
+  { "id": 6, "name": "Habanero",        "chili_icon": "🌶️🌶️🌶️",     "modifiers": [ { "type": "minor_critic_on_dinner", "value": true } ] },
+  { "id": 7, "name": "Ghost Pepper",    "chili_icon": "🌶️🌶️🌶️🌶️",   "modifiers": [ { "type": "cooks_delta", "value": -1 } ] },
+  { "id": 8, "name": "Carolina Reaper", "chili_icon": "🔥",           "modifiers": [ { "type": "utensil_slots", "value": 4 } ] }
+]

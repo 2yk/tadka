@@ -1,0 +1,7 @@
+[
+  { "id": "home",    "name": "Home Kitchen",   "identity": "Balanced 52-card pantry",              "unlock": { "type": "start" } },
+  { "id": "coastal", "name": "Coastal Pantry",  "identity": "+4 Sour, −4 Salty; start with 1 Sun-Dry", "unlock": { "type": "win_run" },            "build": { "family_delta": { "sour": 4, "salty": -4 } }, "start_blends": ["sun_dry"] },
+  { "id": "royal",   "name": "Royal Kitchen",   "identity": "44 cards; start with a random Rare utensil", "unlock": { "type": "win_stake", "stake": 2 }, "build": { "trim": 8 }, "start_rare_utensil": true },
+  { "id": "hawker",  "name": "Street Hawker",   "identity": "Cooks 5, utensil slots 4",            "unlock": { "type": "win_vendors", "count": 2 }, "cooks": 5, "utensil_slots": 4 },
+  { "id": "monsoon", "name": "Monsoon Larder",  "identity": "Ships with v1.1 Monsoon Mode",        "unlock": { "type": "reserved" }, "reserved": true }
+]

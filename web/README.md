@@ -68,6 +68,45 @@ The engine doubles as a headless balance simulator — run it from the browser c
   finale is now fixed to The Traditionalist.
 - Economy base income 3 → 4 so a build *and* Festivals are both affordable; boss reward = +3 Kitchen levels.
 
+## Progression layer (stakes · unlocks · endless)
+
+Per [`tadka-progression-spec.md`](../tadka-progression-spec.md). Turns "I won once" into a long tail.
+All data-driven — the schemas live in [`data/`](data/) (`stakes.json`, `achievements.json`, `decks.json`)
+and are mirrored inline for the self-contained artifact.
+
+- **Stakes — the Heat Ladder** (8 cumulative tiers, Paprika → Carolina Reaper). Winning a deck at stake N
+  unlocks N+1 for that deck (5 decks × 8 = 40 goals; shown as a chili grid in the Recipe Book). Modifiers
+  fold into the run config only — `service_reward_zero`, `target_scale`, `swaps_delta`, `cooks_delta`,
+  `shop_inflation_per_city`, `minor_critic_on_dinner`, `utensil_slots`.
+- **Unlocks + meta-save** (`localStorage`, schema §4, write-through). ~12 utensils start available, the rest
+  are achievement- or stake-gated; the shop only rolls what you've unlocked. Death never takes unlocks away.
+- **Achievements** (event bus: `dish_played`, `service_cleared`, `run_won`, `coins_held`, `utensil_bought`,
+  `reroll_count`, …). Each payoff utensil is gated behind performing its own trigger once (First Flush →
+  Golden Sieve). `first_dish` fires on run 1 so early runs always unlock something.
+- **Secret recipes** — Five of a Kind, Family Feast (Full House, one family), Perfect Palate — reachable only
+  via blends; show as **? ? ?** in the Recipe Book until played once.
+- **Endless Mode** — after victory, **Continue the Route →**: `CityBase(k)=CityBase(k−1)·(2+0.25(k−1))`,
+  service targets `×{0.6,1.0,1.6}`. Distance = endless services cleared → local top-10. Scores go compact
+  (`1.2M`, `34.5B`) then engineering past `1e15`.
+- **Recipe Book** — the whole collection made visible (recipes, utensils, decks, stake grid), locked items
+  as silhouettes.
+
+## The balance sim (`--stake`)
+
+The engine is auto-extracted to [`game-core.mjs`](game-core.mjs) (byte-identical to the inline copy) so the
+CLI scores exactly like the game:
+
+```bash
+node tools/sim.mjs                     # win-rate ladder, all 8 stakes, 500 runs each
+node tools/sim.mjs --stake 3           # a single stake
+node tools/sim.mjs --stake 8 -n 2000 --deck royal
+```
+
+(Node wasn't installed on the authoring box, so the ladder was verified via the equivalent in-browser sim:
+greedy no-blend bot, 200 runs/stake — Paprika ~26% → stake 8 0%, monotone-decreasing with stake 8 ≤ 2%,
+meeting spec §1's acceptance. Per tuning directive #1 the stake modifiers are steep for the bot because the
+coin→Kitchen-leveling loop is economy-sensitive; they're config and want real-play data before a tuning pass.)
+
 ## How this ports to the Flutter/Flame build (M1)
 
 The file is sectioned so each block maps 1:1 to a spec'd package. Nothing touches the DOM until `§UI`.
