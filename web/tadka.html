@@ -208,6 +208,45 @@
   .help-bottom{display:flex; gap:8px; margin-top:20px}
   .help-bottom .btn{flex:1}
   @media (prefers-reduced-motion:reduce){ *{animation:none !important; transition:none !important} }
+
+  /* ---- Coach (cheat overlay) ---- */
+  #helpBtn{right:48px}                 /* shove Help left to make room for Coach */
+  #coachBtn{position:absolute; top:6px; right:8px; z-index:25; width:34px; height:34px; border-radius:50%;
+    background:var(--panel2); border:1px dashed var(--accent); color:var(--accent); font-size:15px; font-weight:800;
+    display:flex; align-items:center; justify-content:center; box-shadow:0 2px 6px #0007}
+  #coachBtn.on{background:linear-gradient(180deg,#F0C36A,#D9A441); color:var(--ink-dark); border-style:solid}
+  #coachBtn:active{transform:translateY(1px)}
+  .coach{border:1px dashed var(--accent); background:rgba(217,164,65,.06); border-radius:12px; padding:10px;
+         display:flex; flex-direction:column; gap:8px}
+  .coach-hd{display:flex; align-items:center; justify-content:space-between; gap:8px}
+  .coach-hd .eyebrow{color:var(--accent)}
+  .coach-tip{font-size:12px; color:var(--ink); line-height:1.45; background:rgba(0,0,0,.18); border-radius:8px; padding:8px 9px}
+  .coach-tip b{color:var(--accent)}
+  .coach-row{text-align:left; width:100%; background:var(--panel2); border:1px solid var(--line); border-radius:10px;
+             padding:9px 10px; display:flex; flex-direction:column; gap:6px; cursor:pointer; color:var(--ink)}
+  .coach-row:active{transform:translateY(1px)}
+  .coach-row.top{border-color:var(--accent)}
+  .cr-top{display:flex; align-items:baseline; justify-content:space-between; gap:8px}
+  .coach-rank{font-family:var(--mono); font-size:11px; color:var(--accent); font-weight:700}
+  .coach-dish{font-size:13.5px; font-weight:700}
+  .coach-score{font-family:var(--mono); font-size:15px; color:var(--accent); font-weight:700; white-space:nowrap}
+  .coach-flag{font-size:10px; font-weight:700; padding:1px 6px; border-radius:5px; margin-left:6px; text-transform:uppercase; letter-spacing:.04em}
+  .flag-clear{background:#1f3a2a; color:var(--good)} .flag-short{background:#3a2b12; color:var(--accent)}
+  .cmini{display:flex; gap:4px; flex-wrap:wrap}
+  .cmini span{font-family:var(--mono); font-size:10.5px; padding:2px 7px; border-radius:5px; background:#0003; border:1px solid var(--line)}
+  .cmini i{display:inline-block; width:7px; height:7px; border-radius:50%; margin-right:5px; vertical-align:middle}
+  .coach-fx{font-family:var(--mono); font-size:10.5px; color:var(--dim); line-height:1.55}
+  .coach-fx .plus{color:var(--good)} .coach-fx .mult{color:var(--accent)}
+  .coach-why{font-size:11.5px; color:var(--ink); line-height:1.45}
+  .coach-why b{color:var(--accent)}
+  .coach-buy{background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:9px 10px; display:flex; flex-direction:column; gap:5px}
+  .coach-buy.best{border-color:var(--accent); background:rgba(217,164,65,.08)}
+  .cb-top{display:flex; align-items:baseline; justify-content:space-between; gap:8px}
+  .cb-name{font-size:13.5px; font-weight:700}
+  .cb-val{font-family:var(--mono); font-size:11.5px; color:var(--accent); white-space:nowrap; text-align:right}
+  .cb-eg{font-size:11px; color:var(--dim); line-height:1.45}
+  .cb-eg b{color:var(--ink)}
+  .cb-note{display:flex; align-items:center; gap:6px; flex-wrap:wrap}
 </style>
 
 <div id="tadka"><div class="stage"><div class="wrap" id="root"></div></div></div>
@@ -878,6 +917,8 @@ let selUtil=-1;          // tapped utensil slot (to show desc)
 let offers=[];           // current bazaar offers
 let screen='start';
 let lastSeed='';
+let coach=(()=>{try{return localStorage.getItem('tadka_coach')==='1';}catch(e){return false;}})();  // cheat/solver overlay
+function setCoach(v){coach=v;try{localStorage.setItem('tadka_coach',v?'1':'0');}catch(e){}}
 
 // plain to 99,999; then compact (1.2M · 34.5B · 1.1T); engineering past 1e15
 function fmt(n){
@@ -970,6 +1011,156 @@ function levelsNote(r){
   return `<div class="note" style="color:#f2a8cf">🎉 Kitchen Lv ${kl} — every recipe's base score is boosted</div>`;
 }
 
+/* ---------- Coach (cheat): brute-force solver + honest explanations ----------
+   Reuses the LIVE engine (scoreDish / bestPattern / dishError), so every number
+   the Coach shows is exactly what the game will score — no parallel math. */
+function kcombs(n,k){ const res=[]; if(k>n||k<1) return res;
+  const idx=Array.from({length:k},(_,i)=>i);
+  while(true){ res.push(idx.slice()); let i=k-1; while(i>=0&&idx[i]===i+n-k)i--; if(i<0)break; idx[i]++; for(let j=i+1;j<k;j++)idx[j]=idx[j-1]+1; }
+  return res; }
+function miniCards(cards){
+  return `<div class="cmini">`+cards.map(c=>`<span><i style="background:var(--${c.family})"></i>${c.display}</span>`).join('')+`</div>`;
+}
+function stepsHtml(steps){
+  return `<div class="coach-fx">`+steps.map(s=>`<div class="${s.cls}">${s.t}</div>`).join('')+`</div>`;
+}
+// every legal dish from the current hand, best first, de-duped to the fewest-card version of each outcome
+function coachDishes(run, limit=5){
+  const hand=run.hand, mc=maxSelect(), n=hand.length, ctx=ctxFor(run), best={};
+  for(let s=1;s<=Math.min(mc,n);s++) for(const combo of kcombs(n,s)){
+    const cards=combo.map(i=>hand[i]);
+    if(dishError(cards, run.critic)) continue;
+    const res=scoreDish(cards, ctx);
+    const sig=res.pattern;                             // one row per recipe type — the best-scoring version of each, so the list is a ladder of real options
+    const cur=best[sig];
+    if(!cur || res.score>cur.res.score || (res.score===cur.res.score && combo.length<cur.idxs.length)) best[sig]={idxs:combo, cards, res};
+  }
+  return Object.values(best).sort((a,b)=> b.res.score-a.res.score || a.idxs.length-b.idxs.length).slice(0,limit);
+}
+const BIG_PATTERNS=['flush','straight','full_house','four_kind','straight_flush','five_kind','full_family','perfect_palate'];
+function coachGloss(res){
+  const mult=res.steps.find(s=>s.cls==='mult');
+  if(mult){ const name=mult.t.split(':')[0];
+    return `The <b>${name}</b> heat multiplier is the lever — heat multiplies your <i>whole</i> flavor total, so one big ×heat beats piling on flavor.`; }
+  if(BIG_PATTERNS.includes(res.pattern))
+    return `Reaching <b>${GENERIC[res.pattern]}</b> is the win here — big recipes start from a much higher base than singles or pairs (final ${round1(res.flavor)}×${round1(res.heat)}).`;
+  if(res.heat>=6)
+    return `Flavor <b>${round1(res.flavor)}</b> × heat <b>${round1(res.heat)}</b> — heat is doing real work. Every heat source is worth more than one more flavor point.`;
+  return `Only a <b>${GENERIC[res.pattern]}</b> — small base. SWAP toward matching ranks (Pair→Three→Four), one family (Flush), or a heat source to multiply up.`;
+}
+function coachPanelService(run){
+  const list=coachDishes(run,5); if(!list.length) return '';
+  const top=list[0], pctTop=Math.round(top.res.score/Math.max(1,run.target)*100);
+  const need=Math.max(1,Math.ceil(run.target/Math.max(1,top.res.score)));
+  const tip = top.res.score>=run.target
+    ? `Your best dish <b>clears this whole service</b> in one cook (${fmt(top.res.score)} ≥ ${fmt(run.target)}). Tap it to load the cards, then COOK.`
+    : `Best single dish = <b>${pctTop}%</b> of target. Roughly <b>${need} cooks</b> like it clear the service — or SWAP toward a bigger recipe. Tap any row to load it.`;
+  const rows=list.map((d,i)=>{
+    const clears=d.res.score>=run.target;
+    const flag = clears?`<span class="coach-flag flag-clear">clears ✓</span>`:`<span class="coach-flag flag-short">${Math.round(d.res.score/Math.max(1,run.target)*100)}%</span>`;
+    return `<button class="coach-row ${i===0?'top':''}" data-coach="${d.idxs.join(',')}">
+      <div class="cr-top"><span><span class="coach-rank">#${i+1}</span> <span class="coach-dish">${GENERIC[d.res.pattern]}</span>${flag}</span><span class="coach-score">${fmt(d.res.score)}</span></div>
+      ${miniCards(d.cards)}
+      ${stepsHtml(d.res.steps)}
+      <div class="coach-why">${coachGloss(d.res)}</div>
+    </button>`;
+  }).join('');
+  return `<div class="coach">
+    <div class="coach-hd"><span class="eyebrow">🧠 Coach · best dishes</span><span class="dim" style="font-size:11px">tap a row to load →</span></div>
+    <div class="coach-tip">${tip}</div>${rows}</div>`;
+}
+
+// ---- Bazaar coach: value each offer by RE-SIMULATING it on benchmark dishes ----
+function estFutureDishes(run){
+  if(run.endless) return 8;
+  const done=run.cityIndex*3+run.serviceIndex+1;   // services finished, incl. the one just cleared
+  return Math.max(1, Math.round((9-done)*2.5));      // ~2.5 dishes/service left in the run
+}
+function benchHands(){                                  // representative dishes covering the utensil condition space
+  const mk=(fam,rank)=>({id:'bx_'+fam+rank, family:fam, rank, display:rank+' '+fam[0].toUpperCase()+fam.slice(1), prized:false});
+  return [
+    {label:'a 5-Spicy Flush',               cards:[mk('spicy',4),mk('spicy',6),mk('spicy',8),mk('spicy',9),mk('spicy',10)]},  // non-consecutive on purpose: a plain Flush, not a Straight Flush
+    {label:'a Full House (three 9s, two 6s)',cards:[mk('umami',9),mk('umami',9),mk('umami',9),mk('salty',6),mk('salty',6)]},
+    {label:'a wide 5-card spread',           cards:[mk('sweet',10),mk('sour',8),mk('salty',7),mk('umami',6),mk('spicy',5)]},
+    {label:'a Three of a Kind (three 8s)',   cards:[mk('spicy',8),mk('sweet',8),mk('salty',8)]},
+    {label:'a Pair (two 9s)',                cards:[mk('spicy',9),mk('sweet',9)]},
+  ];
+}
+function benchCtx(run){ return {palate:PALATES[cityOf(run).id], utensils:run.utensils, critic:null, kitchenLevel:run.kitchenLevel, isFirstDish:false, isLastDish:false}; }
+// evaluate first/last-dish variants too, so is_first_dish (Ice Box) / is_last_dish (Clay Handi) utensils show their real best-case
+const BENCH_VARIANTS=[{first:false,last:false,tag:''},{first:true,last:false,tag:'on your first dish, '},{first:false,last:true,tag:'on your last dish, '}];
+function offerImpact(run, o){                          // permanents only (utensil/festival); returns the best-case delta over the benchmark set
+  const base=benchCtx(run); let best={delta:-1};
+  for(const b of benchHands()) for(const v of BENCH_VARIANTS){
+    const ctx={...base, isFirstDish:v.first, isLastDish:v.last};
+    const before=scoreDish(b.cards, ctx).score; let after=before;
+    if(o.kind==='utensil'){ const u=UTIL_BY_ID[o.id]; if(!u) continue; after=scoreDish(b.cards, {...ctx, utensils:[...run.utensils, {...u}]}).score; }
+    else if(o.kind==='festival'){ after=scoreDish(b.cards, {...ctx, kitchenLevel:run.kitchenLevel+1}).score; }
+    const delta=after-before;
+    if(delta>best.delta) best={delta, before, after, bench:b.label, when:v.tag};
+  }
+  return best;
+}
+const BLEND_COACH={
+  chili_oil:{when:'Turns off-family cards <b>Spicy</b> — complete a Flush, or feed Spicy synergies (Tandoor, spicy palates).', eg:'4 Spicy + 1 stray → convert the stray = a full <b>Flush</b> (base 30 vs a High Card\'s 5).'},
+  sea_salt:{when:'Same as Chili Oil but <b>Salty</b> — a Salty Flush, or a salt-loving palate.', eg:'bridge two families into the one Flush you were a card short of.'},
+  fermentation:{when:'<b>+3 ranks</b> on the cards you pick — more flavor each, and reaches higher pairs/straights.', eg:'a 4 becomes a 7: bigger per-card flavor, and can finish a Straight.'},
+  sharpen:{when:'Sets a card to <b>rank 10</b> — max per-card flavor, or forge a pair/trip with your other 10s.', eg:'two 10s + a sharpened third = <b>Three of a Kind</b> at max rank.'},
+  sun_dry:{when:'<b>Duplicates</b> a card — extra copies build toward Four/Five of a Kind and wider dishes.', eg:'copy a 9 so four 9s become <b>five 9s</b> — the secret Five-of-a-Kind.'},
+  mise:{when:'<b>Draw 2</b> extra cards — pure card advantage, more chances to hit a big recipe this cook.', eg:'dig for the 5th Flush card without spending a swap.'}
+};
+function coachOffers(run){
+  return offers.map((o,i)=>{
+    if(o.kind==='utensil'||o.kind==='festival'){ const imp=offerImpact(run,o); const perDish=Math.max(0,imp.delta);
+      return {o,i,imp,perDish,value:perDish*estFutureDishes(run)}; }
+    return {o,i,imp:null,perDish:0,value:55};           // one-shot blend: flat rank weight
+  }).sort((a,b)=> b.value-a.value);
+}
+function coachPanelBazaar(run){
+  const ranked=coachOffers(run); if(!ranked.length) return '';
+  const eD=estFutureDishes(run);
+  const afford=ranked.filter(r=> run.coins>=r.o.cost);
+  const pick=afford[0];
+  const head = pick
+    ? `Best value for your <b>${run.coins}🪙</b>: <b>${pick.o.name}</b>. Permanents (utensils &amp; <b>Festivals</b>) are scored across the ~${eD} dishes you have left, so they usually beat one-time blends — and buying <i>early</i> is worth more.`
+    : `Nothing's affordable yet (<b>${run.coins}🪙</b>). Reroll only with coins to spare; otherwise just Travel on and bank interest.`;
+  const rows=ranked.map((r,idx)=>{
+    const o=r.o, best=idx===0;
+    const canAfford=run.coins>=o.cost;
+    const slotsFull=o.kind==='utensil'&&run.utensils.length>=run.utensilSlots;
+    const blendsFull=o.kind==='blend'&&run.blends.length>=3;
+    let val, why, eg='';
+    if(o.kind==='utensil'){
+      const eff=(UTIL_BY_ID[o.id]||{}).effect||{};
+      why=(UTIL_BY_ID[o.id]||{}).text||o.desc;
+      if(r.perDish>0){ val=`+${fmt(r.perDish)}/dish · ~${fmt(r.value)} this run`; eg=`e.g. ${r.imp.when}${r.imp.bench}: ${fmt(r.imp.before)} → <b>${fmt(r.imp.after)}</b>.`; }
+      else if(eff.coin_add){ val=`+${eff.coin_add}🪙/dish`; eg=`Adds <b>coins</b>, not dish score — and coins buy Festivals, the real scaling engine. Strong in an early coin build.`; }
+      else if(eff.copy_right){ val='combo piece'; eg='Copies the utensil to its <b>right</b> — useless alone, strong beside your best one (e.g. next to Clay Handi = a second ×3 heat).'; }
+      else { val='situational'; eg='No gain on the test dishes — its condition (above) isn\'t met there. It pays off once you build the dish it wants.'; }
+    } else if(o.kind==='festival'){
+      val=`+${fmt(r.perDish)}/dish now · <b>compounds all run</b>`;
+      why=`Levels every recipe's base score (Kitchen Lv ${run.kitchenLevel} → ${run.kitchenLevel+1}). This is the scaling engine — it pays on every remaining dish and stacks with more Festivals.`;
+      if(r.imp) eg=`e.g. on ${r.imp.bench}: ${fmt(r.imp.before)} → <b>${fmt(r.imp.after)}</b>, and more after your next one.`;
+    } else {
+      const bc=BLEND_COACH[o.id]||{when:o.desc,eg:''}; val='one-time';
+      why=bc.when; eg=bc.eg?('e.g. '+bc.eg):'';
+    }
+    const flags=[];
+    if(!canAfford) flags.push(`<span class="coach-flag flag-short">need ${o.cost-run.coins}🪙</span>`);
+    if(slotsFull)  flags.push(`<span class="coach-flag flag-short">slots full · sell one</span>`);
+    if(blendsFull) flags.push(`<span class="coach-flag flag-short">blends full</span>`);
+    return `<div class="coach-buy ${best?'best':''}">
+      <div class="cb-top"><span class="cb-name">${best?'◎ ':''}${o.name} <span class="rarity rar-${o.rarity}">${o.rarity}</span></span><span class="cb-val">${val}</span></div>
+      <div class="coach-why">${why}</div>
+      ${eg?`<div class="cb-eg">${eg}</div>`:''}
+      ${flags.length?`<div class="cb-note">${flags.join('')}</div>`:''}
+    </div>`;
+  }).join('');
+  return `<div class="coach">
+    <div class="coach-hd"><span class="eyebrow">🧠 Coach · best buy</span><span class="dim" style="font-size:11px">~${eD} dishes left</span></div>
+    <div class="coach-tip">${head}</div>${rows}</div>`;
+}
+
 function renderService(){
   const r=RUN, city=cityOf(r), pal=PALATES[city.id];
   const pct=Math.max(0,Math.min(100, r.target? r.score/r.target*100:0));
@@ -1016,6 +1207,7 @@ function renderService(){
     </div>
 
     <div class="spacer"></div>
+    ${coach?coachPanelService(r):''}
     <div class="hand" id="hand">${renderHand()}</div>
     <div class="card-panel" style="display:flex;flex-direction:column;gap:10px;position:sticky;bottom:8px">
       <div class="selinfo"><div>${recLine}</div>${projLine}</div>
@@ -1041,6 +1233,10 @@ function renderService(){
   // wire blends
   [...document.querySelectorAll('.blend')].forEach(el=>{
     el.onclick=()=>useBlend(+el.dataset.i);
+  });
+  // wire coach rows — tapping one loads exactly those cards into the selection
+  [...document.querySelectorAll('[data-coach]')].forEach(el=>{
+    el.onclick=()=>{ sel=new Set(el.dataset.coach.split(',').map(Number)); render(); };
   });
   const cookErr=dishError(chosen, r.critic);
   $('cookBtn').disabled=!!cookErr||r.cooksLeft<=0;
@@ -1136,6 +1332,7 @@ function renderBazaar(){
       <div class="spread"><div class="eyebrow">Offers</div><button class="btn sell" id="rerollBtn" ${r.coins<2?'disabled':''}>Reroll · 2🪙</button></div>
       <div id="offerList" style="display:flex;flex-direction:column;gap:8px">${renderOffers()}</div>
     </div>
+    ${coach?coachPanelBazaar(r):''}
     ${renderLevelsPanel()}
     <div class="card-panel" style="display:flex;flex-direction:column;gap:8px">
       <div class="eyebrow">Your utensils (${r.utensils.length}/5) — sell for half</div>
@@ -1414,6 +1611,13 @@ function openHelp(){
       <li>Earn per service: 3 + 1 per unused cook + interest (1 per 5 coins).</li>
       <li>Spend on utensils/blends; reroll offers (2🪙) or sell utensils for half.</li>
     </ul>
+    <h4>🧠 Coach (cheat / learn mode)</h4>
+    <ul>
+      <li>Tap the <b>🧠</b> button (top-right) to toggle the Coach on or off — it stays on until you turn it off.</li>
+      <li>On the cook screen it lists your <b>best dishes, highest score first</b>, with the exact flavor×heat breakdown and the reason each scores what it does. <b>Tap a row to load those cards</b>, then COOK.</li>
+      <li>In the Bazaar it ranks every offer by <b>real value</b> — it re-scores test dishes with and without each buy — and marks the <b>◎ best buy</b> with an example and why.</li>
+      <li>It's a training aid: leave it on to learn the combos, turn it off once they click.</li>
+    </ul>
     <h4>Seeds</h4>
     <p>Type a seed on the start screen (or reuse one) to play an identical run — great for challenging friends with the same cards.</p>
     <div class="help-bottom">
@@ -1429,8 +1633,13 @@ function mountChrome(){
   const stage=document.querySelector('.stage');
   const b=document.createElement('button'); b.id='helpBtn'; b.type='button'; b.textContent='?';
   b.setAttribute('aria-label','How to play'); b.title='How to play'; b.onclick=openHelp;
+  const c=document.createElement('button'); c.id='coachBtn'; c.type='button'; c.textContent='🧠';
+  c.setAttribute('aria-label','Coach / cheat mode');
+  const paintCoach=()=>{ c.className=coach?'on':''; c.title=coach?'Coach ON — showing best plays (tap to hide)':'Coach: show the best plays & buys'; };
+  paintCoach();
+  c.onclick=()=>{ setCoach(!coach); paintCoach(); flash(coach?'🧠 Coach ON — best plays & buys shown':'Coach off'); render(); };
   const h=document.createElement('div'); h.id='tipHost';
-  stage.appendChild(b); stage.appendChild(h);
+  stage.appendChild(b); stage.appendChild(c); stage.appendChild(h);
 }
 
 /* ---------- boot ---------- */

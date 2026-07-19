@@ -46,6 +46,25 @@ Add it to your Home Screen (Share → Add to Home Screen) for a full-screen, app
 - **Run summary:** per-service scores, cause of death, seed, Play Again / Replay.
 - **Onboarding for testers:** a one-time coach tip appears the first time you reach each step (welcome → cook → recipe/score → boss critic → bazaar → using a blend → summary), each with "Got it" / "Skip all tips". A **?** button on every screen opens a full **How to Play** sheet any time; it also has "Show step tips again" to reset. Seen-state is stored per-browser (`localStorage`), so each tester sees each tip once.
 
+## 🧠 Coach (cheat / learn mode)
+
+Toggle with the **🧠 button** (top-right, next to `?`); the choice persists per-browser (`localStorage`). It's a
+solver overlay for players still learning the combos — and it never lies, because it drives the **live engine**:
+
+- **On the cook screen** it brute-forces every legal dish from your hand and lists the **best per recipe, highest
+  score first** — each row shows the exact `scoreDish` **breakdown** (base × level, per-card flavor, each utensil
+  step, final flavor × heat) plus a one-line strategic *why*. **Tap a row to load those exact cards**, then COOK.
+  It obeys the active critic, so it only ever suggests legal dishes.
+- **In the Bazaar** it ranks every offer by **real marginal value**: it re-scores a panel of benchmark dishes (Flush,
+  Full House, wide spread, Three-of-a-Kind, Pair — across first/last-dish variants) *with and without* each buy, and
+  reports the delta. Permanents (utensils & Festivals) are valued across the estimated dishes left in the run, so
+  they're compared fairly against one-time blends; the **◎ best buy** is marked with a concrete before→after example
+  and the reason. Coin utensils are labelled as economy (not "situational"), and combo pieces (Grandmother's Ladle)
+  are flagged as such.
+
+Because it reuses `scoreDish`/`bestPattern`/`dishError`/`rollOffers`, every number the Coach shows is exactly what
+the game will score — there's no parallel math to drift. Ports to M1 as a `game_core` solver used by a debug overlay.
+
 ## Tuning is data, not code
 
 City score targets live in the `CITIES` array (search `§CONTENT`). Utensil numbers live in `UTENSILS`.
