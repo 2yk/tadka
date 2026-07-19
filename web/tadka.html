@@ -1,0 +1,836 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Spice Route — M0 Graybox</title>
+<!--
+  PROJECT TADKA — "Spice Route" M0 graybox (web prototype)
+  ------------------------------------------------------------------
+  Ugly on purpose. Fun is mandatory. This is a text/rectangle graybox
+  to run the M0 fun-check per tadka-m0-build-spec.md.
+
+  This single file is organized into the same layers the Flutter build
+  will use, so the logic ports 1:1 to Dart later:
+    §RNG      -> game_core (seeded PRNG)
+    §CONTENT  -> content   (ingredients, utensils, blends, palates, critics, cities)
+    §ENGINE   -> game_core (pattern detection + scoring order-of-ops)
+    §RUN      -> game_core (run state machine + economy + bazaar)
+    §UI       -> apps/mobile (the ugly graybox shell)
+  Nothing here touches the DOM until §UI.
+-->
+<style>
+  :root{
+    --bg:#17130f; --panel:#221b15; --panel2:#2c231b; --line:#3a2e23;
+    --ink:#f3e9d8; --dim:#a89a86; --accent:#e8a020; --good:#7cb342; --bad:#e23b22;
+    --spicy:#e23b22; --sweet:#e8a020; --sour:#7cb342; --salty:#4a90d9; --umami:#8e5aa8;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --ui:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  #tadka, #tadka *{margin:0}
+  #tadka{
+    font-family:var(--ui); color:var(--ink); background:var(--bg);
+    min-height:100dvh; -webkit-text-size-adjust:100%;
+    display:flex; justify-content:center;
+  }
+  .wrap{width:100%; max-width:480px; min-height:100dvh; display:flex; flex-direction:column;
+        padding:10px 12px calc(12px + env(safe-area-inset-bottom)); gap:10px; position:relative}
+  .num{font-family:var(--mono); font-variant-numeric:tabular-nums}
+  button{font-family:var(--ui); cursor:pointer; border:none; color:var(--ink)}
+  .btn{background:var(--panel2); border:1px solid var(--line); border-radius:10px;
+       padding:12px 14px; font-size:15px; font-weight:600; min-height:48px}
+  .btn:active{transform:translateY(1px)}
+  .btn.primary{background:var(--accent); color:#231604; border-color:#b87d10}
+  .btn.good{background:var(--good); color:#10240a; border-color:#5c8a2c}
+  .btn:disabled{opacity:.38; filter:grayscale(.4)}
+  .card-panel{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px}
+  .row{display:flex; gap:8px; align-items:center}
+  .spread{display:flex; justify-content:space-between; align-items:center; gap:8px}
+  .eyebrow{font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--dim)}
+  .dim{color:var(--dim)}
+  h1{font-size:26px; letter-spacing:.02em}
+  h2{font-size:18px}
+
+  /* ---- header / score ---- */
+  .hdr{display:flex; flex-direction:column; gap:8px}
+  .service-line{display:flex; justify-content:space-between; align-items:baseline; gap:8px}
+  .city{font-size:17px; font-weight:700}
+  .svc{font-size:12px; color:var(--dim); text-transform:uppercase; letter-spacing:.1em}
+  .scorebar{display:flex; align-items:baseline; justify-content:space-between; gap:10px}
+  .score-now{font-family:var(--mono); font-size:34px; font-weight:700; line-height:1}
+  .score-now.hit{color:var(--good)}
+  .target{font-family:var(--mono); font-size:14px; color:var(--dim); text-align:right}
+  .target b{color:var(--ink); font-weight:700}
+  .meter{height:8px; background:#0f0c09; border-radius:6px; overflow:hidden; border:1px solid var(--line)}
+  .meter > i{display:block; height:100%; background:linear-gradient(90deg,var(--accent),var(--good)); width:0%; transition:width .5s ease}
+  .chips{display:flex; gap:6px; flex-wrap:wrap}
+  .chip{font-family:var(--mono); font-size:12px; background:var(--panel2); border:1px solid var(--line);
+        border-radius:20px; padding:5px 10px; color:var(--dim)}
+  .chip b{color:var(--ink)}
+  .note{font-size:12.5px; line-height:1.35}
+  .note.palate{color:var(--sour)} .note.critic{color:var(--bad)}
+
+  /* ---- utensils ---- */
+  .slots{display:flex; gap:6px; flex-wrap:wrap}
+  .slot{flex:1 1 0; min-width:60px; background:var(--panel2); border:1px dashed var(--line);
+        border-radius:9px; padding:7px 6px; font-size:11px; text-align:center; min-height:46px;
+        display:flex; align-items:center; justify-content:center; color:var(--dim)}
+  .slot.filled{border-style:solid; border-color:var(--accent); color:var(--ink); font-weight:600; cursor:pointer}
+  .slot.filled.sel{background:#3a2c12}
+  .util-desc{font-size:12px; color:var(--dim); min-height:16px; line-height:1.35}
+  .util-desc b{color:var(--accent)}
+
+  /* ---- blends ---- */
+  .blends{display:flex; gap:6px; flex-wrap:wrap}
+  .blend{background:#241a2c; border:1px solid #4a3560; color:#d9c7ea; border-radius:9px;
+         padding:8px 10px; font-size:12.5px; font-weight:600; cursor:pointer; min-height:40px}
+  .blend:active{transform:translateY(1px)}
+  .blend small{display:block; color:#9d86b3; font-weight:400; font-size:10.5px}
+
+  /* ---- hand ---- */
+  .hand{display:grid; grid-template-columns:repeat(4,1fr); gap:7px}
+  .pc{position:relative; border-radius:10px; padding:8px 4px 6px; min-height:78px; cursor:pointer;
+      border:1px solid var(--line); background:var(--panel2); display:flex; flex-direction:column;
+      align-items:center; justify-content:space-between; text-align:center; transition:transform .09s ease}
+  .pc .em{font-size:20px; line-height:1}
+  .pc .rk{font-family:var(--mono); font-size:22px; font-weight:700; line-height:1}
+  .pc .nm{font-size:8.5px; color:var(--dim); line-height:1.05; max-width:100%; overflow:hidden}
+  .pc .fam{position:absolute; top:0; left:0; right:0; height:4px; border-radius:10px 10px 0 0}
+  .pc[data-fam=spicy]{border-color:var(--spicy)} .pc[data-fam=spicy] .fam{background:var(--spicy)}
+  .pc[data-fam=sweet]{border-color:var(--sweet)} .pc[data-fam=sweet] .fam{background:var(--sweet)}
+  .pc[data-fam=sour]{border-color:var(--sour)}  .pc[data-fam=sour] .fam{background:var(--sour)}
+  .pc[data-fam=salty]{border-color:var(--salty)} .pc[data-fam=salty] .fam{background:var(--salty)}
+  .pc[data-fam=umami]{border-color:var(--umami)} .pc[data-fam=umami] .fam{background:var(--umami)}
+  .pc.prized{box-shadow:inset 0 0 0 1px var(--accent)}
+  .pc.prized .rk{color:var(--accent)}
+  .pc.sel{transform:translateY(-8px)}
+  .pc.sel::after{content:"✓"; position:absolute; top:-9px; right:-4px; width:20px; height:20px; border-radius:50%;
+     background:var(--accent); color:#231604; font-size:12px; font-weight:800; display:flex; align-items:center; justify-content:center}
+  .pc.sel{border-color:var(--accent); background:#332711}
+
+  /* ---- action bar ---- */
+  .selinfo{min-height:40px; display:flex; flex-direction:column; justify-content:center; gap:2px}
+  .selinfo .rec{font-size:15px; font-weight:700}
+  .selinfo .proj{font-family:var(--mono); color:var(--accent)}
+  .actions{display:grid; grid-template-columns:1fr 1fr; gap:8px}
+  .actions .btn{display:flex; flex-direction:column; gap:1px; align-items:center}
+  .actions .btn small{font-weight:400; font-size:11px; opacity:.8}
+  .spacer{flex:1}
+
+  /* ---- bazaar ---- */
+  .offer{display:flex; justify-content:space-between; align-items:center; gap:10px; padding:11px;
+         background:var(--panel2); border:1px solid var(--line); border-radius:10px}
+  .offer .oi{flex:1} .offer .on{font-weight:700; font-size:14.5px}
+  .offer .od{font-size:12px; color:var(--dim); line-height:1.3}
+  .rarity{font-size:10px; text-transform:uppercase; letter-spacing:.08em; padding:1px 6px; border-radius:4px; margin-left:6px}
+  .rar-common{background:#2a3340; color:#9fb4c9} .rar-uncommon{background:#1f3a2a; color:#8fd6a6}
+  .rar-rare{background:#3a2b12; color:var(--accent)} .rar-blend{background:#2c1f3a; color:#c8a6ea}
+  .buy{min-width:74px; text-align:center; white-space:nowrap}
+  .owned-row{display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:13px;
+             padding:8px 10px; background:var(--panel2); border:1px solid var(--line); border-radius:9px}
+  .sell{font-size:12px; padding:7px 10px; min-height:0}
+
+  /* ---- result toast ---- */
+  .toast{position:fixed; left:50%; top:16%; transform:translateX(-50%); z-index:20; width:min(92vw,440px);
+         background:var(--panel); border:1px solid var(--accent); border-radius:14px; padding:14px 16px;
+         box-shadow:0 12px 40px #000a; text-align:center; animation:pop .18s ease}
+  @keyframes pop{from{transform:translate(-50%,6px); opacity:0}to{transform:translate(-50%,0); opacity:1}}
+  .toast .big{font-family:var(--mono); font-size:30px; font-weight:800; color:var(--accent)}
+  .toast .dn{font-size:16px; font-weight:700; margin-bottom:2px}
+  .toast .fx{font-family:var(--mono); font-size:12px; color:var(--dim); line-height:1.5; margin-top:6px; text-align:left;
+             max-height:34vh; overflow:auto}
+  .toast .fx .plus{color:var(--good)} .toast .fx .mult{color:var(--accent)}
+
+  /* ---- start / summary ---- */
+  .center{display:flex; flex-direction:column; gap:14px; justify-content:center; flex:1}
+  .lede{color:var(--dim); font-size:14px; line-height:1.5}
+  input.seed{font-family:var(--mono); font-size:15px; padding:12px; border-radius:10px; width:100%;
+             background:#0f0c09; border:1px solid var(--line); color:var(--ink)}
+  .hist{display:flex; flex-direction:column; gap:5px}
+  .hist .h{display:flex; justify-content:space-between; font-family:var(--mono); font-size:13px; padding:6px 9px;
+           background:var(--panel2); border-radius:7px; border:1px solid var(--line)}
+  .hist .h.win{border-left:3px solid var(--good)} .hist .h.loss{border-left:3px solid var(--bad)}
+  .kbd{font-family:var(--mono); background:#0f0c09; border:1px solid var(--line); border-radius:5px; padding:1px 6px}
+  .tag{display:inline-block; font-size:11px; color:var(--dim); border:1px solid var(--line); border-radius:20px; padding:2px 9px}
+  .hidden{display:none !important}
+  @media (prefers-reduced-motion:reduce){ *{animation:none !important; transition:none !important} }
+</style>
+
+<div id="tadka"><div class="wrap" id="root"></div></div>
+
+<script>
+/* =====================================================================
+   §RNG  (game_core)  — deterministic seeded PRNG. Same seed => same run.
+   ===================================================================== */
+function xmur3(str){let h=1779033703^str.length;for(let i=0;i<str.length;i++){h=Math.imul(h^str.charCodeAt(i),3432918353);h=h<<13|h>>>19;}return function(){h=Math.imul(h^h>>>16,2246822507);h=Math.imul(h^h>>>13,3266489909);h^=h>>>16;return h>>>0;};}
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+function makeRng(seedStr){
+  const seed=xmur3(String(seedStr))(); const f=mulberry32(seed);
+  return {
+    next:f,
+    int:(n)=>Math.floor(f()*n),
+    pick:(arr)=>arr[Math.floor(f()*arr.length)],
+    shuffle:(arr)=>{const a=arr.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(f()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;},
+    weighted:(pairs)=>{ // [[key,w],...]
+      const tot=pairs.reduce((s,p)=>s+p[1],0); let r=f()*tot;
+      for(const[k,w]of pairs){ if((r-=w)<0) return k; } return pairs[pairs.length-1][0];
+    }
+  };
+}
+
+/* =====================================================================
+   §CONTENT  (content package)  — pure data. Trivially JSON for Dart.
+   ===================================================================== */
+const FAMILIES=['spicy','sweet','sour','salty','umami'];
+const FAM_EMOJI={spicy:'🌶️',sweet:'🍯',sour:'🍋',salty:'🧂',umami:'🍄'};
+const NAMES={
+  spicy:['Paprika','Black Pepper','Green Chili','Mustard Seed','Cayenne','Red Chili',"Bird's Eye Chili",'Scotch Bonnet','Ghost Pepper','Carolina Reaper'],
+  sweet:['Jaggery','Honey','Date','Fig','Palm Sugar','Maple','Condensed Milk','Caramel','Dark Chocolate','Rose Syrup'],
+  sour:['Lime','Lemon','Tamarind','Green Mango','Yogurt','Vinegar','Kokum','Sumac','Amchur','Fermented Lime'],
+  salty:['Sea Salt','Rock Salt','Soy Sauce','Fish Sauce','Miso','Olives','Capers','Anchovy','Preserved Lemon','Bottarga'],
+  umami:['Mushroom','Tomato','Seaweed','Parmesan','Dashi','Soy Bean','Cured Ham','Dried Shiitake','Aged Cheese','Bonito Flake']
+};
+// full 52-card pantry: 5 families x ranks 1-10 (+2 prized)
+function buildPantry(){
+  const cards=[];
+  for(const fam of FAMILIES) for(let r=1;r<=10;r++)
+    cards.push({id:fam+'_'+r, family:fam, rank:r, display:NAMES[fam][r-1], prized:false});
+  cards.push({id:'prized_saffron', family:'umami', rank:10, display:'Saffron', prized:true});
+  cards.push({id:'prized_ghee',    family:'sweet', rank:10, display:'Ghee',    prized:true});
+  return cards;
+}
+const PRIZED_BONUS=25;
+
+// recipe base table  (concept doc §3.2 / spec §4)
+const PORDER=['high_card','pair','two_pair','three_kind','straight','flush','full_house','four_kind','straight_flush'];
+const RECIPE={
+  high_card:{flavor:5,heat:1}, pair:{flavor:10,heat:2}, two_pair:{flavor:20,heat:2},
+  three_kind:{flavor:30,heat:3}, straight:{flavor:30,heat:4}, flush:{flavor:35,heat:4},
+  full_house:{flavor:40,heat:4}, four_kind:{flavor:60,heat:7}, straight_flush:{flavor:100,heat:8}
+};
+const GENERIC={high_card:'High Card',pair:'Pair',two_pair:'Two Pair',three_kind:'Three of a Kind',
+  straight:'Straight',flush:'Flush',full_house:'Full House',four_kind:'Four of a Kind',straight_flush:'Straight Flush'};
+
+// regional dish names per city (concept doc §2.1) — pure data, zero mechanical cost
+const DISH_NAMES={
+  kochi:{high_card:'Street Snack',pair:'Chaat',two_pair:'Meals Combo',three_kind:'Curry',straight:'Sadya',flush:'Signature Thali',full_house:'Feast',four_kind:'Royal Curry',straight_flush:'Royal Biryani'},
+  tokyo:{high_card:'Bento Bite',pair:'Onigiri',two_pair:'Teishoku',three_kind:'Ramen',straight:'Sushi Set',flush:'Omakase',full_house:'Donburi Feast',four_kind:'Wagyu Course',straight_flush:'Kaiseki'},
+  naples:{high_card:'Cicchetti',pair:'Bruschetta',two_pair:'Antipasti',three_kind:'Risotto',straight:'Primi e Secondi',flush:'Margherita',full_house:'Festa',four_kind:'Quattro Formaggi',straight_flush:"Nonna's Feast"}
+};
+
+// 20 M0 utensils (spec §6). effect DSL. NOTE: a few condition/effect keys
+// (num_cards, all_cards_same_family, pattern_at_least, heat_per_card) extend the
+// spec's starter list to express Wok/Bamboo/Emperor/Butcher/Griddle — carry them to Dart.
+const UTENSILS=[
+  // commons (cost 4)
+  {id:'iron_tawa',name:'Iron Tawa',rarity:'common',cost:4,trigger:'on_dish',condition:{min_cards:3},effect:{flavor_add:30},text:'+30 flavor if the dish has 3+ ingredients'},
+  {id:'mint_garnish',name:'Mint Garnish',rarity:'common',cost:4,trigger:'on_dish',condition:{contains_family:'sour'},effect:{heat_add:4},text:'+4 heat if the dish contains a Sour ingredient'},
+  {id:'salt_cellar',name:'Salt Cellar',rarity:'common',cost:4,trigger:'on_dish',condition:{contains_family:'salty'},effect:{heat_add:3},text:'+3 heat if the dish contains a Salty ingredient'},
+  {id:'honey_jar',name:'Honey Jar',rarity:'common',cost:4,trigger:'on_dish',condition:{contains_family:'sweet'},effect:{flavor_add:25},text:'+25 flavor if the dish contains a Sweet ingredient'},
+  {id:'stock_pot',name:'Stock Pot',rarity:'common',cost:4,trigger:'on_dish',condition:{contains_family:'umami'},effect:{heat_add:2},text:'+2 heat if the dish contains an Umami ingredient'},
+  {id:'street_cart',name:'Street Cart',rarity:'common',cost:4,trigger:'on_dish',condition:null,effect:{coin_add:1},text:'+1 coin per dish played'},
+  {id:'big_spoon',name:'Big Spoon',rarity:'common',cost:4,trigger:'on_dish',condition:{pattern_is:'pair'},effect:{flavor_add:20},text:'+20 flavor if the recipe is a Pair'},
+  {id:'rice_cooker',name:'Rice Cooker',rarity:'common',cost:4,trigger:'on_dish',condition:{pattern_is:'three_kind'},effect:{flavor_add:30},text:'+30 flavor if the recipe is Three of a Kind'},
+  // uncommons (cost 6)
+  {id:'tandoor',name:'Tandoor',rarity:'uncommon',cost:6,trigger:'on_dish',condition:{all_cards_family:'spicy'},effect:{heat_mult:1.5},text:'×1.5 heat if every ingredient is Spicy'},
+  {id:'pressure_cooker',name:'Pressure Cooker',rarity:'uncommon',cost:6,trigger:'on_card',condition:null,effect:{retrigger_highest:true},text:'Retrigger the highest-intensity ingredient'},
+  {id:'wok',name:'Wok',rarity:'uncommon',cost:6,trigger:'on_dish',condition:{all_cards_same_family:true},effect:{heat_mult:1.5},text:'×1.5 heat if all ingredients share a flavor family'},
+  {id:'chai_stall',name:'Chai Stall',rarity:'uncommon',cost:6,trigger:'on_dish',condition:{pattern_is:'pair'},effect:{coin_add:2},text:'+2 coins when you cook a Pair'},
+  {id:'bamboo_steamer',name:'Bamboo Steamer',rarity:'uncommon',cost:6,trigger:'on_dish',condition:{num_cards:3},effect:{heat_add:5},text:'+5 heat if exactly 3 ingredients'},
+  {id:'butchers_block',name:"Butcher's Block",rarity:'uncommon',cost:6,trigger:'on_dish',condition:{pattern_at_least:'full_house'},effect:{flavor_add:40},text:'+40 flavor if the recipe is Full House or better'},
+  {id:'ice_box',name:'Ice Box',rarity:'uncommon',cost:6,trigger:'on_dish',condition:{is_first_dish:true},effect:{heat_mult:2},text:'First dish of each service gets ×2 heat'},
+  {id:'griddle',name:'Griddle',rarity:'uncommon',cost:6,trigger:'on_dish',condition:null,effect:{heat_per_card:1},text:'+1 heat per ingredient played'},
+  // rares (cost 9)
+  {id:'clay_handi',name:'Clay Handi',rarity:'rare',cost:9,trigger:'on_dish',condition:{is_last_dish:true},effect:{heat_mult:3},text:'Last dish of each service gets ×3 heat'},
+  {id:'grandmother_ladle',name:"Grandmother's Ladle",rarity:'rare',cost:9,trigger:'on_dish',condition:null,effect:{copy_right:true},text:'Copies the effect of the utensil to its right'},
+  {id:'golden_sieve',name:'Golden Sieve',rarity:'rare',cost:9,trigger:'on_dish',condition:{pattern_is:'flush'},effect:{flavor_add:50,heat_add:3},text:'Flushes get +50 flavor and +3 heat'},
+  {id:'emperors_wok',name:"Emperor's Wok",rarity:'rare',cost:9,trigger:'on_dish',condition:{num_cards:5},effect:{heat_mult:2},text:'×2 heat if the dish uses 5 ingredients'}
+];
+const UTIL_BY_ID=Object.fromEntries(UTENSILS.map(u=>[u.id,u]));
+const RARITY_WEIGHTS=[['common',60],['uncommon',30],['rare',10]];
+
+// 6 spice blends (consumables). `select` = how many held cards to target.
+const BLENDS=[
+  {id:'chili_oil',name:'Chili Oil',cost:3,select:2,desc:'Turn up to 2 selected ingredients Spicy 🌶️'},
+  {id:'sea_salt',name:'Sea Salt',cost:3,select:2,desc:'Turn up to 2 selected ingredients Salty 🧂'},
+  {id:'fermentation',name:'Fermentation',cost:3,select:1,desc:'+3 intensity to 1 selected ingredient'},
+  {id:'sun_dry',name:'Sun-Dry',cost:3,select:1,desc:'Duplicate 1 selected ingredient into your hand'},
+  {id:'sharpen',name:'Whetstone',cost:4,select:1,desc:'Set 1 selected ingredient to intensity 10'},
+  {id:'mise',name:'Mise en Place',cost:3,select:0,desc:'Draw 2 extra ingredients this turn'}
+];
+const BLEND_BY_ID=Object.fromEntries(BLENDS.map(b=>[b.id,b]));
+
+// city palates (spec §7). Different shapes on purpose.
+const PALATES={
+  kochi:{city:'kochi',label:'Sour ingredients give +50% intensity as flavor',perCardFlavorPct:{family:'sour',pct:50}},
+  tokyo:{city:'tokyo',label:'Umami ingredients give +2 heat each',perCardHeat:{family:'umami',add:2}},
+  naples:{city:'naples',label:'Flush dishes get +40 flavor',dishFlavorIfPattern:{pattern:'flush',add:40}}
+};
+// critics (boss demands)
+const CRITICS={
+  minimalist:{id:'minimalist',name:'The Minimalist',rule:'Dishes may use at most 3 ingredients',max_cards:3},
+  traditionalist:{id:'traditionalist',name:'The Traditionalist',rule:'Sweet ingredients contribute 0 intensity (and no palate bonus)',debuff:'sweet'}
+};
+// 3-city mini-run (spec §7)
+const CITIES=[
+  {id:'kochi', name:'Kochi 🇮🇳',  targets:[300,800,2000],     critic:'minimalist'},
+  {id:'tokyo', name:'Tokyo 🇯🇵',  targets:[3500,6000,11000],  critic:'traditionalist'},
+  {id:'naples',name:'Naples 🇮🇹', targets:[18000,30000,50000],critic:'random'}
+];
+const SERVICE_NAMES=['Lunch Rush','Dinner Rush','The Food Critic'];
+
+/* =====================================================================
+   §ENGINE  (game_core)  — pattern detection + exact scoring order-of-ops.
+   Pure functions. No state, no DOM.
+   ===================================================================== */
+function bestPattern(cards){
+  const n=cards.length, byRank={}, byFam={};
+  cards.forEach(c=>{byRank[c.rank]=(byRank[c.rank]||0)+1; byFam[c.family]=(byFam[c.family]||0)+1;});
+  const uniq=Object.keys(byRank).map(Number).sort((a,b)=>a-b);
+  const isFlush=n===5 && Object.keys(byFam).length===1;
+  const isStraight=n===5 && uniq.length===5 && (uniq[4]-uniq[0]===4);
+  const ranksWith=(k)=>Object.keys(byRank).map(Number).filter(r=>byRank[r]>=k);
+  const take=(ranks,per)=>{const t={},out=[];for(const c of cards){if(ranks.includes(c.rank)){t[c.rank]=t[c.rank]||0;if(t[c.rank]<per){out.push(c);t[c.rank]++;}}}return out;};
+  if(isFlush&&isStraight) return {pattern:'straight_flush',scoring:cards.slice()};
+  const fours=ranksWith(4); if(fours.length) return {pattern:'four_kind',scoring:take([Math.max(...fours)],4)};
+  const trips=ranksWith(3);
+  if(n===5&&trips.length){const t=Math.max(...trips); if(ranksWith(2).some(r=>r!==t)) return {pattern:'full_house',scoring:cards.slice()};}
+  if(isFlush) return {pattern:'flush',scoring:cards.slice()};
+  if(isStraight) return {pattern:'straight',scoring:cards.slice()};
+  if(trips.length) return {pattern:'three_kind',scoring:take([Math.max(...trips)],3)};
+  const pairs=ranksWith(2);
+  if(pairs.length>=2) return {pattern:'two_pair',scoring:take(pairs.sort((a,b)=>b-a).slice(0,2),2)};
+  if(pairs.length===1) return {pattern:'pair',scoring:take([pairs[0]],2)};
+  let hi=cards[0]; for(const c of cards) if(c.rank>hi.rank) hi=c;
+  return {pattern:'high_card',scoring:[hi]};
+}
+
+// how much one scoring card adds (intensity + prized + per-card palate + critic debuff)
+function cardContribution(card,ctx){
+  const tradSweet=ctx.critic&&ctx.critic.id==='traditionalist'&&card.family==='sweet';
+  let intensity=tradSweet?0:card.rank, dF=intensity, dH=0;
+  if(card.prized&&!tradSweet) dF+=PRIZED_BONUS;
+  if(!tradSweet&&ctx.palate){
+    const p=ctx.palate;
+    if(p.perCardFlavorPct&&p.perCardFlavorPct.family===card.family) dF+=intensity*p.perCardFlavorPct.pct/100;
+    if(p.perCardHeat&&p.perCardHeat.family===card.family) dH+=p.perCardHeat.add;
+  }
+  return {dF,dH};
+}
+
+// resolve a utensil slot's effective effect (handles Grandmother's Ladle copy, non-recursive)
+function resolveSlot(utensils,i){
+  const u=utensils[i]; if(!u) return null;
+  if(u.effect&&u.effect.copy_right){
+    const r=utensils[i+1];
+    if(r&&!(r.effect&&r.effect.copy_right)) return {name:u.name+' → '+r.name, trigger:r.trigger, condition:r.condition, effect:r.effect};
+    return {name:u.name, trigger:'on_dish', condition:null, effect:{}};
+  }
+  return u;
+}
+function condMet(cond,c){
+  if(!cond) return true;
+  const p=c.playedCards;
+  if(cond.all_cards_family&&!p.every(x=>x.family===cond.all_cards_family)) return false;
+  if(cond.contains_family&&!p.some(x=>x.family===cond.contains_family)) return false;
+  if(cond.all_cards_same_family){const f=p[0].family; if(!p.every(x=>x.family===f)) return false;}
+  if(cond.min_cards!=null&&p.length<cond.min_cards) return false;
+  if(cond.num_cards!=null&&p.length!==cond.num_cards) return false;
+  if(cond.pattern_is&&c.pattern!==cond.pattern_is) return false;
+  if(cond.pattern_at_least&&PORDER.indexOf(c.pattern)<PORDER.indexOf(cond.pattern_at_least)) return false;
+  if(cond.is_first_dish&&!c.isFirstDish) return false;
+  if(cond.is_last_dish&&!c.isLastDish) return false;
+  return true;
+}
+
+// THE HEART — scoreDish. ctx: {palate, utensils[], critic, isFirstDish, isLastDish}
+function scoreDish(playedCards, ctx){
+  const {pattern,scoring}=bestPattern(playedCards);
+  const base=RECIPE[pattern];
+  const S={flavor:base.flavor, heat:base.heat, coins:0};
+  const steps=[]; const log=(t,cls)=>steps.push({t,cls});
+  log(`${GENERIC[pattern]} · base ${base.flavor} flavor × ${base.heat} heat`,'');
+
+  // dish-level palate (Naples flush)
+  if(ctx.palate&&ctx.palate.dishFlavorIfPattern&&ctx.palate.dishFlavorIfPattern.pattern===pattern){
+    S.flavor+=ctx.palate.dishFlavorIfPattern.add; log(`Palate +${ctx.palate.dishFlavorIfPattern.add} flavor`,'plus');
+  }
+  // per-card, left→right in played order
+  for(const card of scoring){
+    const {dF,dH}=cardContribution(card,ctx);
+    S.flavor+=dF; S.heat+=dH;
+    let d=`${card.display} +${round1(dF)} flavor`+(dH?` +${dH} heat`:'');
+    if(ctx.critic&&ctx.critic.id==='traditionalist'&&card.family==='sweet') d=`${card.display} (Sweet debuffed → 0)`;
+    log(d,'plus');
+  }
+  // retriggers (Pressure Cooker / Ladle-copied): re-run the highest scoring card
+  let hi=scoring[0]||null; for(const c of scoring) if(c.rank>hi.rank) hi=c;
+  utensils_loop_retrigger(ctx.utensils, hi, ctx, S, log);
+
+  // per-dish utensil triggers, left→right in slot order (additive before multiplicative)
+  const c={playedCards, pattern, isFirstDish:ctx.isFirstDish, isLastDish:ctx.isLastDish};
+  for(let i=0;i<ctx.utensils.length;i++){
+    const eff=resolveSlot(ctx.utensils,i); if(!eff||!eff.effect) continue;
+    const e=eff.effect; if(e.retrigger_highest||e.copy_right) continue;
+    if(!condMet(eff.condition,c)) continue;
+    const before={f:S.flavor,h:S.heat};
+    if(e.flavor_add) S.flavor+=e.flavor_add;
+    if(e.heat_add) S.heat+=e.heat_add;
+    if(e.flavor_per_card) S.flavor+=e.flavor_per_card*playedCards.length;
+    if(e.heat_per_card) S.heat+=e.heat_per_card*playedCards.length;
+    if(e.coin_add) S.coins+=e.coin_add;
+    if(e.heat_mult) S.heat*=e.heat_mult;
+    const parts=[];
+    if(S.flavor!==before.f) parts.push(`${S.flavor>before.f?'+':''}${round1(S.flavor-before.f)} flavor`);
+    if(e.heat_mult) parts.push(`×${e.heat_mult} heat`);
+    else if(S.heat!==before.h) parts.push(`+${round1(S.heat-before.h)} heat`);
+    if(e.coin_add) parts.push(`+${e.coin_add}🪙`);
+    log(`${eff.name}: ${parts.join(', ')||'—'}`, e.heat_mult?'mult':'plus');
+  }
+  const score=Math.floor(S.flavor*S.heat);
+  log(`= ${round1(S.flavor)} flavor × ${round1(S.heat)} heat`,'');
+  return {pattern, scoring, flavor:S.flavor, heat:S.heat, coins:S.coins, score, steps};
+}
+function utensils_loop_retrigger(utensils, hi, ctx, S, log){
+  if(!hi) return;
+  for(let i=0;i<utensils.length;i++){
+    const eff=resolveSlot(utensils,i); if(!eff||!eff.effect||!eff.effect.retrigger_highest) continue;
+    const {dF,dH}=cardContribution(hi,ctx);
+    S.flavor+=dF; S.heat+=dH;
+    log(`${eff.name}: retrigger ${hi.display} (+${round1(dF)} flavor${dH?` +${dH} heat`:''})`,'plus');
+  }
+}
+function round1(n){return Math.round(n*10)/10;}
+
+// dish validity (critic pre-checks) — used to gate COOK
+function dishError(playedCards, critic){
+  if(playedCards.length<1) return 'Select 1–5 ingredients';
+  if(playedCards.length>5) return 'Max 5 ingredients';
+  if(critic&&critic.max_cards&&playedCards.length>critic.max_cards) return `${critic.name}: max ${critic.max_cards} ingredients`;
+  return null;
+}
+
+/* =====================================================================
+   §RUN  (game_core)  — run state machine, economy, bazaar.
+   ===================================================================== */
+function newRun(seedStr){
+  const rng=makeRng(seedStr);
+  const naplesCritic = rng.next()<0.5 ? 'minimalist':'traditionalist';
+  const run={
+    seed:seedStr, rng, naplesCritic,
+    cityIndex:0, serviceIndex:0,
+    coins:4, utensils:[], blends:[],
+    history:[], status:'playing',
+    // per-service (filled by startService)
+    deck:[], hand:[], target:0, score:0, cooksLeft:4, swapsLeft:3, dishesPlayed:0, critic:null
+  };
+  startService(run);
+  return run;
+}
+function cityOf(run){return CITIES[run.cityIndex];}
+function activeCritic(run){
+  if(run.serviceIndex!==2) return null;
+  const c=cityOf(run); let id=c.critic; if(id==='random') id=run.naplesCritic;
+  return CRITICS[id];
+}
+function startService(run){
+  run.deck=run.rng.shuffle(buildPantry());
+  run.hand=run.deck.splice(0,8);
+  run.target=cityOf(run).targets[run.serviceIndex];
+  run.score=0; run.cooksLeft=4; run.swapsLeft=3; run.dishesPlayed=0;
+  run.critic=activeCritic(run);
+}
+function drawUp(run, to=8){ while(run.hand.length<to && run.deck.length) run.hand.push(run.deck.shift()); }
+
+function ctxFor(run){
+  return {
+    palate:PALATES[cityOf(run).id], utensils:run.utensils, critic:run.critic,
+    isFirstDish:run.dishesPlayed===0, isLastDish:run.cooksLeft===1
+  };
+}
+// commit a cook. returns {result, outcome:'won'|'lost'|'continue'}
+function doCook(run, idxs){
+  const played=idxs.map(i=>run.hand[i]);
+  const err=dishError(played, run.critic); if(err) return {error:err};
+  const result=scoreDish(played, ctxFor(run));
+  run.score+=result.score; run.coins+=result.coins;
+  run.dishesPlayed++; run.cooksLeft--;
+  // remove played from hand
+  run.hand=run.hand.filter((_,i)=>!idxs.includes(i));
+  drawUp(run,8);
+  let outcome='continue';
+  if(run.score>=run.target) outcome='won';
+  else if(run.cooksLeft<=0) outcome='lost';
+  return {result, outcome};
+}
+function doSwap(run, idxs){
+  if(idxs.length<1) return {error:'Select ingredients to swap'};
+  if(run.swapsLeft<=0) return {error:'No swaps left'};
+  run.swapsLeft--;
+  run.hand=run.hand.filter((_,i)=>!idxs.includes(i));
+  drawUp(run,8);
+  return {ok:true};
+}
+// economy on service win (spec §2)
+function bankService(run){
+  const unused=run.cooksLeft;
+  const interest=Math.min(5, Math.floor(run.coins/5));
+  const earned=3+unused;
+  run.coins+=earned+interest;
+  run.history.push({city:cityOf(run).name, svc:SERVICE_NAMES[run.serviceIndex], score:run.score, target:run.target, win:true});
+  return {base:3, unused, interest, earned:earned+interest};
+}
+function recordLoss(run){
+  run.history.push({city:cityOf(run).name, svc:SERVICE_NAMES[run.serviceIndex], score:run.score, target:run.target, win:false});
+  run.status='lost';
+}
+// advance after bazaar. sets status 'won' when the whole run is cleared.
+function advance(run){
+  run.serviceIndex++;
+  if(run.serviceIndex>2){ run.serviceIndex=0; run.cityIndex++; }
+  if(run.cityIndex>2){ run.status='won'; return; }
+  startService(run);
+}
+function isFinalService(run){ return run.cityIndex===2 && run.serviceIndex===2; }
+
+// bazaar offers
+function rollOffers(run){
+  const offers=[];
+  for(let k=0;k<3;k++){
+    if(run.rng.next()<0.30){
+      const b=run.rng.pick(BLENDS);
+      offers.push({kind:'blend', id:b.id, name:b.name, cost:b.cost, desc:b.desc, rarity:'blend'});
+    }else{
+      const rar=run.rng.weighted(RARITY_WEIGHTS);
+      const pool=UTENSILS.filter(u=>u.rarity===rar);
+      const u=run.rng.pick(pool);
+      offers.push({kind:'utensil', id:u.id, name:u.name, cost:u.cost, desc:u.text, rarity:u.rarity});
+    }
+  }
+  return offers;
+}
+
+/* =====================================================================
+   §UI  (apps/mobile)  — the ugly graybox shell. All DOM lives here.
+   ===================================================================== */
+const $=(id)=>document.getElementById(id);
+const root=$('root');
+let RUN=null;
+let sel=new Set();       // selected hand indices
+let selUtil=-1;          // tapped utensil slot (to show desc)
+let offers=[];           // current bazaar offers
+let screen='start';
+let lastSeed='';
+
+function fmt(n){return Math.round(n).toLocaleString('en-US');}
+function randomSeed(){ // human-friendly, not for security
+  const s='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let o='';
+  for(let i=0;i<5;i++) o+=s[Math.floor(Math.random()*s.length)]; return 'SPICE-'+o;
+}
+
+function render(){
+  if(screen==='start') return renderStart();
+  if(screen==='service') return renderService();
+  if(screen==='bazaar') return renderBazaar();
+  if(screen==='summary') return renderSummary();
+}
+
+/* ---------- start ---------- */
+function renderStart(){
+  root.innerHTML=`
+    <div class="center">
+      <div>
+        <div class="eyebrow">Project Tadka · M0 graybox</div>
+        <h1>Spice Route</h1>
+        <p class="lede">A traveling-cook deckbuilder. Cook ingredient combos into dishes, clear each service's score target, and shop the Bazaar between rounds. Ugly on purpose — this is the fun-check.</p>
+      </div>
+      <div class="card-panel" style="display:flex;flex-direction:column;gap:10px">
+        <label class="eyebrow" for="seedIn">Seed (same seed = same run)</label>
+        <input id="seedIn" class="seed" placeholder="leave blank for random" value="${lastSeed}">
+        <button class="btn primary" id="playBtn">▶  Start Run</button>
+        <div class="dim" style="font-size:12px;line-height:1.5">
+          Route: <b>Kochi → Tokyo → Naples</b> · 3 services each (Lunch / Dinner / Critic).<br>
+          Hand of 8 · cook up to 5 · 4 cooks &amp; 3 swaps per service.
+        </div>
+      </div>
+      <div class="row" style="gap:6px;flex-wrap:wrap">
+        <span class="tag">9 recipes</span><span class="tag">20 utensils</span>
+        <span class="tag">6 spice blends</span><span class="tag">2 critics</span><span class="tag">seeded RNG</span>
+      </div>
+    </div>`;
+  $('playBtn').onclick=()=>{
+    const v=$('seedIn').value.trim()||randomSeed();
+    lastSeed=v; startRun(v);
+  };
+}
+function startRun(seed){ RUN=newRun(seed); sel.clear(); selUtil=-1; screen='service'; render(); }
+
+/* ---------- service ---------- */
+function selectedCards(){ return [...sel].map(i=>RUN.hand[i]); }
+function maxSelect(){ return (RUN.critic&&RUN.critic.max_cards)?RUN.critic.max_cards:5; }
+
+function renderService(){
+  const r=RUN, city=cityOf(r), pal=PALATES[city.id];
+  const pct=Math.max(0,Math.min(100, r.target? r.score/r.target*100:0));
+  const chosen=selectedCards();
+  // live projection
+  let recLine=`<span class="dim">Select 1–${maxSelect()} ingredients to cook</span>`, projLine='';
+  if(chosen.length){
+    const err=dishError(chosen, r.critic);
+    if(err){ recLine=`<span style="color:var(--bad)">${err}</span>`; }
+    else{
+      const preview=scoreDish(chosen, ctxFor(r));
+      recLine=`<span class="rec">${GENERIC[preview.pattern]} · ${DISH_NAMES[city.id][preview.pattern]}</span>`;
+      projLine=`<span class="proj num">≈ ${fmt(preview.score)}</span>`;
+    }
+  }
+  root.innerHTML=`
+    <div class="hdr">
+      <div class="service-line">
+        <span class="city">${city.name}</span>
+        <span class="svc">${SERVICE_NAMES[r.serviceIndex]} · run ${r.cityIndex+1}·${r.serviceIndex+1}</span>
+      </div>
+      <div class="scorebar">
+        <span class="score-now num ${r.score>=r.target?'hit':''}" id="scoreNow">${fmt(r.score)}</span>
+        <span class="target">target<br><b class="num">${fmt(r.target)}</b></span>
+      </div>
+      <div class="meter"><i id="meterFill" style="width:${pct}%"></i></div>
+      <div class="chips">
+        <span class="chip">cooks <b class="num">${r.cooksLeft}</b></span>
+        <span class="chip">swaps <b class="num">${r.swapsLeft}</b></span>
+        <span class="chip">coins <b class="num">${r.coins}</b> 🪙</span>
+        <span class="chip">deck <b class="num">${r.deck.length}</b></span>
+      </div>
+      <div class="note palate">🍽 Palate — ${pal.label}</div>
+      ${r.critic?`<div class="note critic">👤 ${r.critic.name} — ${r.critic.rule}</div>`:''}
+    </div>
+
+    <div class="card-panel" style="display:flex;flex-direction:column;gap:8px">
+      <div class="eyebrow">Utensils (${r.utensils.length}/5)</div>
+      <div class="slots" id="slots">${renderSlots()}</div>
+      <div class="util-desc" id="utilDesc">${selUtil>=0&&r.utensils[selUtil]?'<b>'+r.utensils[selUtil].name+'</b> — '+r.utensils[selUtil].text:'<span class="dim">Tap a utensil to see what it does. They fire left→right.</span>'}</div>
+      ${r.blends.length?`<div class="eyebrow" style="margin-top:2px">Spice Blends (tap to use)</div><div class="blends" id="blends">${renderBlends()}</div>`:''}
+    </div>
+
+    <div class="spacer"></div>
+    <div class="hand" id="hand">${renderHand()}</div>
+    <div class="card-panel" style="display:flex;flex-direction:column;gap:10px;position:sticky;bottom:8px">
+      <div class="selinfo"><div>${recLine}</div>${projLine}</div>
+      <div class="actions">
+        <button class="btn good" id="cookBtn">COOK<small>${r.cooksLeft} left</small></button>
+        <button class="btn" id="swapBtn">SWAP<small>${r.swapsLeft} left</small></button>
+      </div>
+    </div>`;
+
+  // wire hand
+  [...document.querySelectorAll('.pc')].forEach(el=>{
+    el.onclick=()=>{
+      const i=+el.dataset.i;
+      if(sel.has(i)) sel.delete(i);
+      else{ if(sel.size>=maxSelect()) return; sel.add(i); }
+      render();
+    };
+  });
+  // wire utensil slots
+  [...document.querySelectorAll('.slot.filled')].forEach(el=>{
+    el.onclick=()=>{ selUtil=+el.dataset.i; render(); };
+  });
+  // wire blends
+  [...document.querySelectorAll('.blend')].forEach(el=>{
+    el.onclick=()=>useBlend(+el.dataset.i);
+  });
+  const cookErr=dishError(chosen, r.critic);
+  $('cookBtn').disabled=!!cookErr||r.cooksLeft<=0;
+  $('swapBtn').disabled=sel.size<1||r.swapsLeft<=0;
+  $('cookBtn').onclick=cook;
+  $('swapBtn').onclick=swap;
+}
+function renderSlots(){
+  const r=RUN; let h='';
+  for(let i=0;i<5;i++){
+    const u=r.utensils[i];
+    if(u) h+=`<div class="slot filled ${selUtil===i?'sel':''}" data-i="${i}">${u.name}</div>`;
+    else h+=`<div class="slot">empty</div>`;
+  }
+  return h;
+}
+function renderBlends(){
+  return RUN.blends.map((b,i)=>`<button class="blend" data-i="${i}">${b.name}<small>${b.desc}</small></button>`).join('');
+}
+function renderHand(){
+  return RUN.hand.map((c,i)=>`
+    <div class="pc ${sel.has(i)?'sel':''} ${c.prized?'prized':''}" data-fam="${c.family}" data-i="${i}">
+      <div class="fam"></div>
+      <div class="em">${FAM_EMOJI[c.family]}</div>
+      <div class="rk num">${c.rank}</div>
+      <div class="nm">${c.display}</div>
+    </div>`).join('');
+}
+
+function cook(){
+  const idxs=[...sel];
+  const res=doCook(RUN, idxs);
+  if(res.error){ flash(res.error); return; }
+  sel.clear();
+  showResult(res.result, ()=>{
+    if(res.outcome==='won'){ onServiceWon(); }
+    else if(res.outcome==='lost'){ recordLoss(RUN); screen='summary'; render(); }
+    else render();
+  });
+}
+function swap(){
+  const res=doSwap(RUN,[...sel]);
+  if(res.error){ flash(res.error); return; }
+  sel.clear(); render();
+}
+function useBlend(i){
+  const b=RUN.blends[i]; const chosen=[...sel];
+  if(b.select>0 && chosen.length<1){ flash('Select ingredient(s) first, then tap the blend'); return; }
+  const n=b.select;
+  const targets=chosen.slice(0,n);
+  switch(b.id){
+    case 'chili_oil': targets.forEach(idx=>{RUN.hand[idx]={...RUN.hand[idx],family:'spicy',display:'Chili '+RUN.hand[idx].display};}); break;
+    case 'sea_salt':  targets.forEach(idx=>{RUN.hand[idx]={...RUN.hand[idx],family:'salty',display:'Salted '+RUN.hand[idx].display};}); break;
+    case 'fermentation': targets.forEach(idx=>{RUN.hand[idx]={...RUN.hand[idx],rank:Math.min(10,RUN.hand[idx].rank+3)};}); break;
+    case 'sharpen': targets.forEach(idx=>{RUN.hand[idx]={...RUN.hand[idx],rank:10};}); break;
+    case 'sun_dry': targets.forEach(idx=>{RUN.hand.push({...RUN.hand[idx],id:RUN.hand[idx].id+'_copy'});}); break;
+    case 'mise': for(let k=0;k<2 && RUN.deck.length;k++) RUN.hand.push(RUN.deck.shift()); break;
+  }
+  RUN.blends.splice(i,1); sel.clear(); render();
+  flash(b.name+' used');
+}
+
+function onServiceWon(){
+  const bank=bankService(RUN);
+  if(isFinalService(RUN)){ RUN.status='won'; screen='summary'; render(); return; }
+  offers=rollOffers(RUN); selUtil=-1;
+  screen='bazaar'; render();
+  flash(`Service cleared! +${bank.earned} 🪙 (base 3, ${bank.unused} unused cook${bank.unused===1?'':'s'}, interest ${bank.interest})`);
+}
+
+/* ---------- bazaar ---------- */
+function renderBazaar(){
+  const r=RUN, nextCity=cityOf(r);
+  // preview NEXT service context
+  const ns=r.serviceIndex+1>2? {city:CITIES[Math.min(2,r.cityIndex+1)], svc:0} : {city:nextCity, svc:r.serviceIndex+1};
+  root.innerHTML=`
+    <div class="hdr">
+      <div class="service-line"><span class="city">🛒 The Bazaar</span><span class="svc">coins ${r.coins} 🪙</span></div>
+      <div class="dim note">Buy utensils &amp; blends, then travel on. Up next: <b>${ns.city.name} · ${SERVICE_NAMES[ns.svc]}</b> (target ${fmt(ns.city.targets[ns.svc])}).</div>
+    </div>
+    <div class="card-panel" style="display:flex;flex-direction:column;gap:9px">
+      <div class="spread"><div class="eyebrow">Offers</div><button class="btn sell" id="rerollBtn" ${r.coins<2?'disabled':''}>Reroll · 2🪙</button></div>
+      <div id="offerList" style="display:flex;flex-direction:column;gap:8px">${renderOffers()}</div>
+    </div>
+    <div class="card-panel" style="display:flex;flex-direction:column;gap:8px">
+      <div class="eyebrow">Your utensils (${r.utensils.length}/5) — sell for half</div>
+      <div style="display:flex;flex-direction:column;gap:6px" id="ownList">${renderOwned()}</div>
+      ${r.blends.length?`<div class="eyebrow" style="margin-top:4px">Your blends</div><div class="row" style="flex-wrap:wrap;gap:6px">${r.blends.map(b=>`<span class="chip"><b>${b.name}</b></span>`).join('')}</div>`:''}
+    </div>
+    <div class="spacer"></div>
+    <button class="btn primary" id="nextBtn" style="position:sticky;bottom:8px">Travel on → ${ns.city.name} ${SERVICE_NAMES[ns.svc]}</button>`;
+
+  [...document.querySelectorAll('[data-buy]')].forEach(el=>el.onclick=()=>buyOffer(+el.dataset.buy));
+  [...document.querySelectorAll('[data-sell]')].forEach(el=>el.onclick=()=>sellUtil(+el.dataset.sell));
+  $('rerollBtn').onclick=()=>{ if(RUN.coins>=2){RUN.coins-=2; offers=rollOffers(RUN); render();} };
+  $('nextBtn').onclick=()=>{ advance(RUN); if(RUN.status==='won'){screen='summary';} else {sel.clear();selUtil=-1;screen='service';} render(); };
+}
+function renderOffers(){
+  const r=RUN;
+  return offers.map((o,i)=>{
+    const owned=o.kind==='utensil'?false:false;
+    const full=o.kind==='utensil'&&r.utensils.length>=5;
+    const blendFull=o.kind==='blend'&&r.blends.length>=3;
+    const cant=r.coins<o.cost||full||blendFull;
+    let label=`Buy · ${o.cost}🪙`; if(full) label='Slots full'; if(blendFull) label='Blends full';
+    return `<div class="offer">
+      <div class="oi"><div class="on">${o.name}<span class="rarity rar-${o.rarity}">${o.rarity}</span></div><div class="od">${o.desc}</div></div>
+      <button class="btn buy" data-buy="${i}" ${cant?'disabled':''}>${label}</button>
+    </div>`;
+  }).join('') || '<div class="dim">No offers.</div>';
+}
+function renderOwned(){
+  const r=RUN;
+  if(!r.utensils.length) return '<div class="dim" style="font-size:12.5px">No utensils yet — buy your first above.</div>';
+  return r.utensils.map((u,i)=>`<div class="owned-row"><span><b>${u.name}</b> <span class="dim">${u.text}</span></span><button class="btn sell" data-sell="${i}">Sell ${Math.floor(u.cost/2)}🪙</button></div>`).join('');
+}
+function buyOffer(i){
+  const o=offers[i], r=RUN;
+  if(r.coins<o.cost) return;
+  if(o.kind==='utensil'){
+    if(r.utensils.length>=5) return;
+    r.coins-=o.cost; r.utensils.push({...UTIL_BY_ID[o.id]});
+  }else{
+    if(r.blends.length>=3) return;
+    r.coins-=o.cost; r.blends.push({...BLEND_BY_ID[o.id]});
+  }
+  offers.splice(i,1); render();
+}
+function sellUtil(i){
+  const u=RUN.utensils[i]; RUN.coins+=Math.floor(u.cost/2); RUN.utensils.splice(i,1);
+  if(selUtil===i) selUtil=-1; render();
+}
+
+/* ---------- summary ---------- */
+function renderSummary(){
+  const r=RUN, won=r.status==='won';
+  const last=r.history[r.history.length-1];
+  const dc=won?'':`Fell at <b>${last.city} · ${last.svc}</b> — scored ${fmt(last.score)} of ${fmt(last.target)}.`;
+  root.innerHTML=`
+    <div class="center">
+      <div>
+        <div class="eyebrow">${won?'Run complete':'Run over'}</div>
+        <h1 style="color:${won?'var(--good)':'var(--bad)'}">${won?'🏆 The Route is Yours':'💀 Kitchen Closed'}</h1>
+        <p class="lede">${won?'You cooked your way from Kochi to Naples. That\'s a full M0 run.':dc}</p>
+      </div>
+      <div class="card-panel">
+        <div class="eyebrow" style="margin-bottom:8px">Service history</div>
+        <div class="hist">${r.history.map(h=>`<div class="h ${h.win?'win':'loss'}"><span>${h.city} · ${h.svc}</span><span>${fmt(h.score)} / ${fmt(h.target)} ${h.win?'✓':'✗'}</span></div>`).join('')}</div>
+      </div>
+      <div class="dim" style="font-size:12.5px">Seed: <span class="kbd">${r.seed}</span> · utensils ended: ${r.utensils.map(u=>u.name).join(', ')||'none'}</div>
+      <div class="actions">
+        <button class="btn primary" id="againBtn">Play again (new seed)</button>
+        <button class="btn" id="replayBtn">Replay this seed</button>
+      </div>
+    </div>`;
+  $('againBtn').onclick=()=>{ lastSeed=''; startRun(randomSeed()); };
+  $('replayBtn').onclick=()=>startRun(r.seed);
+}
+
+/* ---------- juice: count-up ticker + result toast + flash ---------- */
+let toastEl=null;
+function showResult(result, done){
+  const reduce=matchMedia('(prefers-reduced-motion:reduce)').matches;
+  const city=cityOf(RUN);
+  const t=document.createElement('div'); t.className='toast';
+  t.innerHTML=`
+    <div class="dn">${DISH_NAMES[city.id][result.pattern]} <span class="dim">· ${GENERIC[result.pattern]}</span></div>
+    <div class="big num" id="tBig">+0</div>
+    <div class="fx">${result.steps.map(s=>`<div class="${s.cls}">${s.t}</div>`).join('')}</div>`;
+  document.querySelector('#tadka .wrap').appendChild(t); toastEl=t;
+  const big=t.querySelector('#tBig');
+  const from=RUN.score-result.score; // score already added in doCook
+  // animate the header score AND the toast number
+  const scoreEl=$('scoreNow'), meter=$('meterFill');
+  const dur=reduce?0:Math.min(900, 350+result.score.toString().length*90);
+  const start=performance.now();
+  function step(now){
+    const p=dur?Math.min(1,(now-start)/dur):1;
+    const e=1-Math.pow(1-p,3);
+    const cur=Math.floor(from+result.score*e);
+    if(scoreEl){ scoreEl.textContent=fmt(cur); if(cur>=RUN.target) scoreEl.classList.add('hit'); }
+    if(meter) meter.style.width=Math.min(100,cur/RUN.target*100)+'%';
+    if(big) big.textContent='+'+fmt(Math.floor(result.score*e));
+    if(p<1) requestAnimationFrame(step);
+    else setTimeout(()=>{ t.remove(); toastEl=null; done&&done(); }, reduce?200:520);
+  }
+  requestAnimationFrame(step);
+}
+function flash(msg){
+  const f=document.createElement('div'); f.className='toast'; f.style.top='auto'; f.style.bottom='14%'; f.style.borderColor='var(--line)';
+  f.innerHTML=`<div style="font-size:14px">${msg}</div>`;
+  document.querySelector('#tadka .wrap').appendChild(f);
+  setTimeout(()=>f.remove(), 1600);
+}
+
+/* ---------- boot ---------- */
+render();
+</script>
