@@ -39,6 +39,7 @@ Add it to your Home Screen (Share → Add to Home Screen) for a full-screen, app
 - **Economy:** 3 base + 1 per unused cook + interest (1 per 5 coins, cap 5).
 - **Seeded RNG:** same seed → identical run (great for bug reports & the future Daily Route). Type a seed on the start screen, or "Replay this seed" from the summary.
 - **Run summary:** per-service scores, cause of death, seed, Play Again / Replay.
+- **Onboarding for testers:** a one-time coach tip appears the first time you reach each step (welcome → cook → recipe/score → boss critic → bazaar → using a blend → summary), each with "Got it" / "Skip all tips". A **?** button on every screen opens a full **How to Play** sheet any time; it also has "Show step tips again" to reset. Seen-state is stored per-browser (`localStorage`), so each tester sees each tip once.
 
 ## Tuning is data, not code
 

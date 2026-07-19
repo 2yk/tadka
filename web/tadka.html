@@ -31,7 +31,8 @@
     min-height:100dvh; -webkit-text-size-adjust:100%;
     display:flex; justify-content:center;
   }
-  .wrap{width:100%; max-width:480px; min-height:100dvh; display:flex; flex-direction:column;
+  .stage{position:relative; width:100%; max-width:480px}
+  .wrap{width:100%; min-height:100dvh; display:flex; flex-direction:column;
         padding:10px 12px calc(12px + env(safe-area-inset-bottom)); gap:10px; position:relative}
   .num{font-family:var(--mono); font-variant-numeric:tabular-nums}
   button{font-family:var(--ui); cursor:pointer; border:none; color:var(--ink)}
@@ -51,10 +52,10 @@
 
   /* ---- header / score ---- */
   .hdr{display:flex; flex-direction:column; gap:8px}
-  .service-line{display:flex; justify-content:space-between; align-items:baseline; gap:8px}
+  .service-line{display:flex; justify-content:space-between; align-items:baseline; gap:8px; padding-right:40px}
   .city{font-size:17px; font-weight:700}
   .svc{font-size:12px; color:var(--dim); text-transform:uppercase; letter-spacing:.1em}
-  .scorebar{display:flex; align-items:baseline; justify-content:space-between; gap:10px}
+  .scorebar{display:flex; align-items:baseline; justify-content:space-between; gap:10px; padding-right:40px}
   .score-now{font-family:var(--mono); font-size:34px; font-weight:700; line-height:1}
   .score-now.hit{color:var(--good)}
   .target{font-family:var(--mono); font-size:14px; color:var(--dim); text-align:right}
@@ -151,10 +152,38 @@
   .kbd{font-family:var(--mono); background:#0f0c09; border:1px solid var(--line); border-radius:5px; padding:1px 6px}
   .tag{display:inline-block; font-size:11px; color:var(--dim); border:1px solid var(--line); border-radius:20px; padding:2px 9px}
   .hidden{display:none !important}
+  /* ---- help button + onboarding tips ---- */
+  #helpBtn{position:absolute; top:6px; right:8px; z-index:25; width:34px; height:34px; border-radius:50%;
+    background:var(--panel2); border:1px solid var(--line); color:var(--accent); font-size:17px; font-weight:800;
+    display:flex; align-items:center; justify-content:center; cursor:pointer; line-height:1}
+  #helpBtn:active{transform:translateY(1px)}
+  .tip-back{position:fixed; inset:0; background:#000a; z-index:40; display:flex; align-items:flex-end; justify-content:center; animation:fade .15s ease}
+  @keyframes fade{from{opacity:0}to{opacity:1}}
+  .tip-sheet{width:100%; max-width:480px; background:var(--panel); border:1px solid var(--accent);
+    border-radius:16px 16px 0 0; padding:18px 18px calc(20px + env(safe-area-inset-bottom)); box-shadow:0 -8px 30px #0009; animation:slideup .2s ease}
+  @keyframes slideup{from{transform:translateY(24px)}to{transform:translateY(0)}}
+  .tip-sheet h3{font-size:17px; margin-bottom:7px}
+  .tip-sheet p{font-size:14px; line-height:1.55}
+  .tip-sheet b{color:var(--accent)}
+  .tip-actions{margin-top:15px}
+  .tip-actions .btn{width:100%}
+  .tip-skip{margin-top:8px; font-size:12px; color:var(--dim); background:none; border:none; text-decoration:underline; padding:8px; width:100%; cursor:pointer}
+  .help-back{position:fixed; inset:0; background:#000c; z-index:50; overflow-y:auto; display:flex; justify-content:center; animation:fade .15s ease}
+  .help-card{width:100%; max-width:480px; min-height:100%; background:var(--bg); padding:14px 16px calc(24px + env(safe-area-inset-bottom))}
+  .help-top{display:flex; justify-content:space-between; align-items:center; position:sticky; top:0; background:var(--bg); padding:6px 0 10px; z-index:1}
+  .help-x{min-height:0; padding:8px 12px}
+  .help-card h4{font-size:12px; text-transform:uppercase; letter-spacing:.1em; color:var(--accent); margin:15px 0 6px}
+  .help-card p{font-size:13.5px; line-height:1.55; margin-bottom:6px}
+  .help-card b{color:var(--ink)}
+  .help-card ul{padding-left:18px; display:flex; flex-direction:column; gap:5px; margin-bottom:4px}
+  .help-card li{font-size:13.5px; line-height:1.45}
+  .help-card li b{color:var(--accent)}
+  .help-bottom{display:flex; gap:8px; margin-top:20px}
+  .help-bottom .btn{flex:1}
   @media (prefers-reduced-motion:reduce){ *{animation:none !important; transition:none !important} }
 </style>
 
-<div id="tadka"><div class="wrap" id="root"></div></div>
+<div id="tadka"><div class="stage"><div class="wrap" id="root"></div></div></div>
 
 <script>
 /* =====================================================================
@@ -560,6 +589,7 @@ function renderStart(){
     const v=$('seedIn').value.trim()||randomSeed();
     lastSeed=v; startRun(v);
   };
+  queueTips([TIPS.welcome]);
 }
 function startRun(seed){ RUN=newRun(seed); sel.clear(); selUtil=-1; screen='service'; render(); }
 
@@ -642,6 +672,12 @@ function renderService(){
   $('swapBtn').disabled=sel.size<1||r.swapsLeft<=0;
   $('cookBtn').onclick=cook;
   $('swapBtn').onclick=swap;
+  // step tips (each shows once, in priority order)
+  const svcTips=[TIPS.svc];
+  if(r.critic) svcTips.push(TIPS.critic);
+  if(chosen.length && !cookErr) svcTips.push(TIPS.recipe);
+  if(r.blends.length) svcTips.push(TIPS.blend);
+  queueTips(svcTips);
 }
 function renderSlots(){
   const r=RUN; let h='';
@@ -732,6 +768,7 @@ function renderBazaar(){
   [...document.querySelectorAll('[data-sell]')].forEach(el=>el.onclick=()=>sellUtil(+el.dataset.sell));
   $('rerollBtn').onclick=()=>{ if(RUN.coins>=2){RUN.coins-=2; offers=rollOffers(RUN); render();} };
   $('nextBtn').onclick=()=>{ advance(RUN); if(RUN.status==='won'){screen='summary';} else {sel.clear();selUtil=-1;screen='service';} render(); };
+  queueTips([TIPS.bazaar]);
 }
 function renderOffers(){
   const r=RUN;
@@ -793,6 +830,7 @@ function renderSummary(){
     </div>`;
   $('againBtn').onclick=()=>{ lastSeed=''; startRun(randomSeed()); };
   $('replayBtn').onclick=()=>startRun(r.seed);
+  queueTips([TIPS.summary]);
 }
 
 /* ---------- juice: count-up ticker + result toast + flash ---------- */
@@ -831,6 +869,95 @@ function flash(msg){
   setTimeout(()=>f.remove(), 1600);
 }
 
+/* ---------- onboarding: one-time coach tips + Help ---------- */
+const TIPS={
+  welcome:{key:'welcome',title:'👋 Welcome, chef',body:"You're a traveling cook. Each <b>service</b>, hit the <b>target score</b> by cooking ingredient combos. I'll pop a quick tip the first time you reach each step — and the <b>?</b> button (top-right) opens the full rules any time. Press Start Run to begin."},
+  svc:{key:'svc',title:'🍳 Cook a dish',body:"Tap 1–5 ingredients, then press <b>COOK</b>. Cards sharing a rank or flavor family form better recipes (Pair, Flush, Full House…) worth far more. Beat the <b>target</b> before your 4 <b>cooks</b> run out. Bad hand? <b>SWAP</b> cards (3 per service). The green <b>Palate</b> line is a local scoring bonus."},
+  recipe:{key:'recipe',title:'📈 Recipe & score',body:"The line above the buttons names your recipe and shows its projected score — that's <b>flavor × heat</b>. Add or remove cards to watch it change. Reaching for a bigger recipe is how scores explode."},
+  critic:{key:'critic',title:'👤 Boss: the Food Critic',body:"Every city's 3rd service is a boss with a special rule shown in <b>red</b> (e.g. max 3 ingredients, or Sweet is debuffed), and a bigger target. Adapt your dish to obey the rule."},
+  bazaar:{key:'bazaar',title:'🛒 The Bazaar',body:"Between services, spend <b>coins</b>. <b>Utensils</b> are permanent boosts that fire on every dish — equip up to 5, they trigger left→right so order matters. <b>Blends</b> are one-time helpers. <b>Reroll</b> (2🪙) for new offers, or <b>Sell</b> utensils you're done with, then Travel on."},
+  blend:{key:'blend',title:'🧪 Using a spice blend',body:"You own a blend! On the cook screen, first tap the ingredient(s) you want to change, <b>then tap the blend</b> to apply it. It's used up after one go."},
+  summary:{key:'summary',title:'🔁 Run over — go again',body:"A run ends when you clear all 3 cities or miss a target. <b>Play again</b> for a fresh run, or <b>Replay this seed</b> to retry the identical run. Share a seed with a friend and you both play the exact same cards."}
+};
+let seen=loadSeen(), tipsOff=loadTipsOff(), tipQ=[], tipShowing=false, currentTipKey=null;
+function loadSeen(){try{return new Set(JSON.parse(localStorage.getItem('tadka_seen')||'[]'));}catch(e){return new Set();}}
+function saveSeen(){try{localStorage.setItem('tadka_seen',JSON.stringify([...seen]));}catch(e){}}
+function loadTipsOff(){try{return localStorage.getItem('tadka_tipsoff')==='1';}catch(e){return false;}}
+function saveTipsOff(v){try{localStorage.setItem('tadka_tipsoff',v?'1':'0');}catch(e){}}
+function markSeen(k){seen.add(k);saveSeen();}
+const tipHost=()=>document.getElementById('tipHost');
+function queueTips(list){
+  if(tipsOff) return;
+  for(const t of list){ if(!t||seen.has(t.key)||t.key===currentTipKey) continue; if(tipQ.find(x=>x.key===t.key)) continue; tipQ.push(t); }
+  if(!tipShowing) nextTip();
+}
+function nextTip(){
+  if(!tipQ.length){ tipShowing=false; currentTipKey=null; return; }
+  tipShowing=true; const t=tipQ.shift(); currentTipKey=t.key;
+  tipHost().innerHTML=`<div class="tip-back"><div class="tip-sheet">
+    <h3>${t.title}</h3><p>${t.body}</p>
+    <div class="tip-actions"><button class="btn primary" id="tipOk">Got it 👍</button></div>
+    <button class="tip-skip" id="tipSkip">Skip all tips</button>
+  </div></div>`;
+  $('tipOk').onclick=()=>dismissTip(false);
+  $('tipSkip').onclick=()=>dismissTip(true);
+}
+function dismissTip(all){
+  if(currentTipKey) markSeen(currentTipKey);
+  currentTipKey=null;
+  if(all){ tipsOff=true; saveTipsOff(true); tipQ=[]; }
+  tipHost().innerHTML=''; tipShowing=false;
+  if(!all) nextTip();
+}
+function openHelp(){
+  const recipes=PORDER.slice().reverse().map(p=>`<li><b>${GENERIC[p]}</b> — ${RECIPE[p].flavor} flavor × ${RECIPE[p].heat} heat</li>`).join('');
+  tipHost().innerHTML=`<div class="help-back"><div class="help-card">
+    <div class="help-top"><h2>How to Play</h2><button class="btn help-x" id="helpX">✕ Close</button></div>
+    <p><b>Goal:</b> you're a traveling cook. In each <b>service</b>, cook dishes to reach the <b>target score</b> before you run out of cooks. Clear all 3 services in a city to travel on; clear Kochi → Tokyo → Naples to win the run.</p>
+    <h4>Cooking</h4>
+    <ul>
+      <li>You hold <b>8 ingredients</b>. Tap 1–5, then <b>COOK</b> (4 cooks per service).</li>
+      <li>Don't like your hand? Select cards and <b>SWAP</b> them for new ones (3 per service).</li>
+      <li>Score = <b>flavor × heat</b>. The preview above the buttons shows it live.</li>
+    </ul>
+    <h4>Recipes — bigger is much better</h4>
+    <ul>${recipes}</ul>
+    <p class="dim">Matching ranks make Pair / Three / Four / Full House. 5 cards of one family = Flush. 5 cards in a rank-run = Straight. Each city renames them after a local dish.</p>
+    <h4>Utensils &amp; blends</h4>
+    <ul>
+      <li><b>Utensils</b> (max 5): permanent boosts firing on every dish, left→right — order matters.</li>
+      <li><b>Blends</b>: one-time helpers. Tap ingredient(s), then tap the blend.</li>
+    </ul>
+    <h4>Palates &amp; critics</h4>
+    <ul>
+      <li><b>Palate</b> (green): each city gives a scoring bonus — build around it.</li>
+      <li><b>Critic</b> (red): the 3rd service is a boss with a rule to obey.</li>
+    </ul>
+    <h4>Bazaar &amp; coins</h4>
+    <ul>
+      <li>Earn per service: 3 + 1 per unused cook + interest (1 per 5 coins).</li>
+      <li>Spend on utensils/blends; reroll offers (2🪙) or sell utensils for half.</li>
+    </ul>
+    <h4>Seeds</h4>
+    <p>Type a seed on the start screen (or reuse one) to play an identical run — great for challenging friends with the same cards.</p>
+    <div class="help-bottom">
+      <button class="btn" id="helpReplay">↺ Show step tips again</button>
+      <button class="btn primary" id="helpDone">Close</button>
+    </div>
+  </div></div>`;
+  const close=()=>{ tipHost().innerHTML=''; if(!tipShowing) nextTip(); };
+  $('helpX').onclick=close; $('helpDone').onclick=close;
+  $('helpReplay').onclick=()=>{ seen=new Set(); saveSeen(); tipsOff=false; saveTipsOff(false); close(); flash('Step tips reset — they\'ll show again as you play'); };
+}
+function mountChrome(){
+  const stage=document.querySelector('.stage');
+  const b=document.createElement('button'); b.id='helpBtn'; b.type='button'; b.textContent='?';
+  b.setAttribute('aria-label','How to play'); b.title='How to play'; b.onclick=openHelp;
+  const h=document.createElement('div'); h.id='tipHost';
+  stage.appendChild(b); stage.appendChild(h);
+}
+
 /* ---------- boot ---------- */
+mountChrome();
 render();
 </script>
