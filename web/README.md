@@ -1,11 +1,15 @@
 # Spice Route — M0 Graybox (web prototype)
 
 The playable **fun-check** build for Project Tadka, per [`tadka-m0-build-spec.md`](../tadka-m0-build-spec.md).
-Ugly on purpose: colored rectangles, text, and emoji only. One load-bearing piece of juice
-(the score count-up ticker) is kept because it's core to game feel.
+Skinned with the **"Midnight Bazaar"** art direction ([`asset-pack/DESIGN-SYSTEM.md`](asset-pack/DESIGN-SYSTEM.md)):
+parchment ticket cards with inline ingredient SVGs, circular utensil badges with rarity rings, per-city
+backdrops, critic medallions, Fraunces/Inter type, and the motion spec (count-up pop, per-card particle
+bursts, big-multiplier screen shake). Colors, layout, and motion follow the design tokens; icons are the
+placeholder set a human artist upgrades later.
 
-It's a single self-contained file — [`tadka.html`](tadka.html) — no build step, no dependencies,
-no external network calls. Runs on any modern phone browser.
+It's a single self-contained file — [`tadka.html`](tadka.html) — no build step, no dependencies. All art is
+inline SVG (embedded from `asset-pack/`); Fraunces + Inter load from Google Fonts where allowed and fall
+back to a serif / system stack under strict CSP (e.g. the hosted Artifact). Runs on any modern phone browser.
 
 ## How to test on your device
 
