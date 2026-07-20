@@ -1,7 +1,8 @@
 /// Run summary — per-service history, cause of death, and the seed.
 ///
-/// The seed is shown prominently and is replayable: every run is seeded, including ones
-/// started from a blank field, so any run worth re-examining can be replayed exactly.
+/// This is the only place the seed surfaces. There's no seed input on the start screen —
+/// it asked the player to care up front about something that only matters in hindsight —
+/// but every run is seeded, so "replay that exact run" still works from here.
 library;
 
 import 'package:flutter/material.dart';
@@ -9,6 +10,7 @@ import 'package:game_core/game_core.dart' as gc;
 
 import '../game_controller.dart';
 import '../theme.dart';
+import '../widgets/buttons.dart';
 import '../widgets/juice.dart';
 import 'start_screen.dart';
 
@@ -118,9 +120,9 @@ class SummaryScreen extends StatelessWidget {
             Row(
               children: [
                 Expanded(
-                  child: _Btn(
-                    label: 'REPLAY SEED',
+                  child: PressableButton(
                     filled: false,
+                    child: const Text('REPLAY RUN', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, letterSpacing: 1)),
                     onTap: () {
                       final seed = run.seed;
                       final stake = run.stake;
@@ -135,10 +137,9 @@ class SummaryScreen extends StatelessWidget {
                 const SizedBox(width: 10),
                 Expanded(
                   flex: 2,
-                  child: _Btn(
-                    label: 'PLAY AGAIN',
-                    filled: true,
+                  child: PressableButton(
                     onTap: () => c.startRun(randomSeed()),
+                    child: const Text('PLAY AGAIN', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, letterSpacing: 1)),
                   ),
                 ),
               ],
@@ -169,44 +170,5 @@ class _Stat extends StatelessWidget {
       const SizedBox(height: 2),
       Text(value, style: T.dish(17)),
     ],
-  );
-}
-
-class _Btn extends StatelessWidget {
-  const _Btn({required this.label, required this.onTap, required this.filled});
-
-  final String label;
-  final VoidCallback onTap;
-  final bool filled;
-
-  @override
-  Widget build(BuildContext context) => GestureDetector(
-    onTap: onTap,
-    child: Container(
-      height: 52,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        gradient: filled
-            ? const LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [T.brassLight, T.brass],
-              )
-            : null,
-        borderRadius: BorderRadius.circular(12),
-        border: filled
-            ? const Border(bottom: BorderSide(color: T.brassDark, width: 4))
-            : Border.all(color: const Color(0xFF443C68), width: 2),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 1,
-          color: filled ? T.inkDark : T.ink,
-        ),
-      ),
-    ),
   );
 }

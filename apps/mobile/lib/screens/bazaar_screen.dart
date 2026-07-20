@@ -10,6 +10,7 @@ import 'package:game_core/game_core.dart' as gc;
 
 import '../game_controller.dart';
 import '../theme.dart';
+import '../widgets/buttons.dart';
 
 class BazaarScreen extends StatelessWidget {
   const BazaarScreen({required this.controller, super.key});
@@ -75,17 +76,22 @@ class BazaarScreen extends StatelessWidget {
             Row(
               children: [
                 Expanded(
-                  child: _Btn(
-                    label: 'REROLL (${GameController.rerollCost}🪙)',
+                  child: PressableButton(
                     enabled: run.coins >= GameController.rerollCost,
                     onTap: c.reroll,
                     filled: false,
+                    child: Text('REROLL (${GameController.rerollCost}🪙)',
+                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, letterSpacing: 1)),
                   ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
                   flex: 2,
-                  child: _Btn(label: 'NEXT SERVICE →', enabled: true, onTap: c.nextService, filled: true),
+                  child: PressableButton(
+                    onTap: c.nextService,
+                    child: const Text('NEXT SERVICE →',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, letterSpacing: 1)),
+                  ),
                 ),
               ],
             ),
@@ -199,49 +205,6 @@ class _RackRow extends StatelessWidget {
           ),
           Text('+${(utensil.cost / 2).floor()}🪙', style: T.bodyDim.copyWith(color: T.good)),
         ],
-      ),
-    ),
-  );
-}
-
-class _Btn extends StatelessWidget {
-  const _Btn({required this.label, required this.enabled, required this.onTap, required this.filled});
-
-  final String label;
-  final bool enabled;
-  final VoidCallback onTap;
-  final bool filled;
-
-  @override
-  Widget build(BuildContext context) => Opacity(
-    opacity: enabled ? 1 : 0.4,
-    child: GestureDetector(
-      onTap: enabled ? onTap : null,
-      child: Container(
-        height: 52,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          gradient: filled
-              ? const LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [T.brassLight, T.brass],
-                )
-              : null,
-          borderRadius: BorderRadius.circular(12),
-          border: filled
-              ? const Border(bottom: BorderSide(color: T.brassDark, width: 4))
-              : Border.all(color: const Color(0xFF443C68), width: 2),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 1,
-            color: filled ? T.inkDark : T.ink,
-          ),
-        ),
       ),
     ),
   );

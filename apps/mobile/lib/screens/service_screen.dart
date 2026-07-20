@@ -10,6 +10,7 @@ import 'package:game_core/game_core.dart' as gc;
 
 import '../game_controller.dart';
 import '../theme.dart';
+import '../widgets/buttons.dart';
 import '../widgets/ingredient_card.dart';
 import '../widgets/juice.dart';
 
@@ -33,11 +34,32 @@ class _ServiceScreenState extends State<ServiceScreen> {
   /// Per-hand-slot keys so particle bursts can originate from the actual card on screen.
   final Map<int, GlobalKey> _cardKeys = {};
 
+  /// Anchor for where a cooked dish resolves, so cards have somewhere to fly to.
+  final GlobalKey _panelKey = GlobalKey();
+
   /// Blocks input while the cook animation plays, so a double-tap can't cook twice.
   bool _busy = false;
   gc.ScoreResult? _toast;
 
   GlobalKey _keyFor(int i) => _cardKeys.putIfAbsent(i, GlobalKey.new);
+
+  /// Sends the played cards up into the dish panel.
+  ///
+  /// Without this the cards simply vanish from the hand and a number appears elsewhere —
+  /// the two events don't read as connected. Flying them into the panel is what makes the
+  /// score feel *caused* by the cards you chose.
+  void _flyCards(List<(Offset from, gc.Card card, double width)> cards, Offset to) {
+    final overlay = Overlay.of(context);
+    late OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (context) => _FlyingCards(
+        cards: cards,
+        target: to,
+        onDone: () => entry.remove(),
+      ),
+    );
+    overlay.insert(entry);
+  }
 
   Future<void> _cook() async {
     final c = widget.controller;
@@ -51,16 +73,20 @@ class _ServiceScreenState extends State<ServiceScreen> {
 
     // Capture positions before the cards leave the hand.
     final positions = <(Offset, Color)>[];
+    final flying = <(Offset, gc.Card, double)>[];
     for (final i in c.selected) {
-      final ctx = _keyFor(i).currentContext;
-      final box = ctx?.findRenderObject() as RenderBox?;
+      final box = _keyFor(i).currentContext?.findRenderObject() as RenderBox?;
       if (box != null) {
+        final card = c.run!.hand[i];
         positions.add((
           box.localToGlobal(box.size.center(Offset.zero)),
-          T.family[c.run!.hand[i].family] ?? T.umami,
+          T.family[card.family] ?? T.umami,
         ));
+        flying.add((box.localToGlobal(Offset.zero), card, box.size.width));
       }
     }
+    final panelBox = _panelKey.currentContext?.findRenderObject() as RenderBox?;
+    final target = panelBox?.localToGlobal(panelBox.size.center(Offset.zero));
 
     final out = c.cook();
     final result = out?.result;
@@ -70,6 +96,11 @@ class _ServiceScreenState extends State<ServiceScreen> {
     }
 
     setState(() => _toast = result);
+
+    final reduced = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    if (!reduced && target != null && flying.isNotEmpty) {
+      _flyCards(flying, target);
+    }
 
     // Stagger a burst per triggered card, matching the web build's per-card cascade.
     for (var i = 0; i < positions.length; i++) {
@@ -121,10 +152,16 @@ class _ServiceScreenState extends State<ServiceScreen> {
           // Everything below is anchored to the thumb zone; the gap above is the "stage" the
           // dish resolves into, and is intentional per the layout brief.
           const Spacer(),
-          if (_toast != null)
-            _DishToast(result: _toast!, cityId: city.id)
-          else
-            _PreviewBar(preview: preview, blocker: c.selected.isEmpty ? null : c.cookBlocker, error: c.errorMessage),
+          KeyedSubtree(
+            key: _panelKey,
+            child: _toast != null
+                ? _DishToast(result: _toast!, cityId: city.id)
+                : _PreviewBar(
+                    preview: preview,
+                    blocker: c.selected.isEmpty ? null : c.cookBlocker,
+                    error: c.errorMessage,
+                  ),
+          ),
           const SizedBox(height: 10),
           _Hand(
             run: run,
@@ -480,38 +517,61 @@ class _Hand extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
-    // Fit the whole hand without scrolling — a hidden card is a missed combo.
-    final cardW = ((width - 24 - 7 * 4) / 8).clamp(34.0, 62.0);
-    return SizedBox(
-      height: cardW * 1.4 + 12,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          for (var i = 0; i < run.hand.length; i++)
-            Padding(
-              padding: EdgeInsets.only(right: i == run.hand.length - 1 ? 0 : 4),
-              child: TweenAnimationBuilder<double>(
-                key: ValueKey('${run.hand[i].id}_$i'),
-                tween: Tween(begin: 0, end: 1),
-                duration: Motion.deal,
-                curve: Curves.easeOutCubic,
-                builder: (context, t, child) => Opacity(
-                  opacity: t,
-                  child: Transform.translate(offset: Offset(0, 26 * (1 - t)), child: child),
-                ),
-                child: IngredientCard(
-                  key: keyFor(i),
-                  card: run.hand[i],
-                  width: cardW,
-                  selected: selected.contains(i),
-                  debuffed: run.critic?.debuff == run.hand[i].family,
-                  onTap: enabled ? () => onTap(i) : null,
-                ),
-              ),
+    // Two rows of four rather than one row of eight. Eight across a phone forced cards down
+    // to ~55px — too small to read a rank and an ingredient name at a glance, which is the
+    // one thing the player does constantly. Halving the columns roughly doubles the card and
+    // spends the vertical space the layout had going spare.
+    const gap = 7.0;
+    final cardW = ((width - 24 - gap * 3) / 4).clamp(56.0, 108.0);
+    final rows = <List<int>>[];
+    for (var i = 0; i < run.hand.length; i += 4) {
+      rows.add([for (var j = i; j < i + 4 && j < run.hand.length; j++) j]);
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (final row in rows)
+          Padding(
+            padding: EdgeInsets.only(bottom: row == rows.last ? 0 : gap),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                for (final i in row)
+                  Padding(
+                    padding: EdgeInsets.only(right: i == row.last ? 0 : gap),
+                    child: TweenAnimationBuilder<double>(
+                      key: ValueKey('${run.hand[i].id}_$i'),
+                      tween: Tween(begin: 0, end: 1),
+                      duration: Motion.deal,
+                      // stagger the deal across the whole hand, not per row
+                      curve: Interval(
+                        (i / run.hand.length) * 0.45,
+                        1,
+                        curve: Curves.easeOutCubic,
+                      ),
+                      builder: (context, t, child) => Opacity(
+                        opacity: t.clamp(0.0, 1.0),
+                        child: Transform.translate(
+                          offset: Offset(0, 30 * (1 - t)),
+                          child: child,
+                        ),
+                      ),
+                      child: IngredientCard(
+                        key: keyFor(i),
+                        card: run.hand[i],
+                        width: cardW,
+                        selected: selected.contains(i),
+                        debuffed: run.critic?.debuff == run.hand[i].family,
+                        onTap: enabled ? () => onTap(i) : null,
+                      ),
+                    ),
+                  ),
+              ],
             ),
-        ],
-      ),
+          ),
+      ],
     );
   }
 }
@@ -538,85 +598,102 @@ class _ActionBar extends StatelessWidget {
     children: [
       Expanded(
         flex: 3,
-        child: _BrassButton(label: 'COOK  ($cooksLeft)', enabled: canCook, onTap: onCook),
+        child: PressableButton(
+          enabled: canCook,
+          onTap: onCook,
+          height: 56,
+          child: Text(
+            'COOK  ($cooksLeft)',
+            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, letterSpacing: 1.2),
+          ),
+        ),
       ),
       const SizedBox(width: 10),
       Expanded(
         flex: 2,
-        child: _OutlineButton(label: 'SWAP  ($swapsLeft)', enabled: canSwap, onTap: onSwap),
+        child: PressableButton(
+          enabled: canSwap,
+          onTap: onSwap,
+          filled: false,
+          height: 56,
+          child: Text(
+            'SWAP  ($swapsLeft)',
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, letterSpacing: 1.2),
+          ),
+        ),
       ),
     ],
   );
 }
 
-/// Brass vertical gradient with a darker bottom edge — the design system's "physical press".
-class _BrassButton extends StatelessWidget {
-  const _BrassButton({required this.label, required this.enabled, required this.onTap});
+/// Cards arcing from the hand into the dish panel, then popping out of existence.
+///
+/// Deliberately short (340ms) and overlapping the count-up rather than preceding it: the
+/// point is to link cause and effect, not to make the player wait to see their score.
+class _FlyingCards extends StatefulWidget {
+  const _FlyingCards({required this.cards, required this.target, required this.onDone});
 
-  final String label;
-  final bool enabled;
-  final VoidCallback onTap;
+  final List<(Offset from, gc.Card card, double width)> cards;
+  final Offset target;
+  final VoidCallback onDone;
 
   @override
-  Widget build(BuildContext context) => Opacity(
-    opacity: enabled ? 1 : 0.4,
-    child: GestureDetector(
-      onTap: enabled ? onTap : null,
-      child: Container(
-        height: 54,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [T.brassLight, T.brass],
-          ),
-          borderRadius: BorderRadius.circular(12),
-          border: const Border(bottom: BorderSide(color: T.brassDark, width: 4)),
-        ),
-        child: Text(
-          label,
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 1.2,
-            color: T.inkDark,
-          ),
-        ),
-      ),
-    ),
-  );
+  State<_FlyingCards> createState() => _FlyingCardsState();
 }
 
-class _OutlineButton extends StatelessWidget {
-  const _OutlineButton({required this.label, required this.enabled, required this.onTap});
-
-  final String label;
-  final bool enabled;
-  final VoidCallback onTap;
+class _FlyingCardsState extends State<_FlyingCards> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 340),
+  )..forward();
 
   @override
-  Widget build(BuildContext context) => Opacity(
-    opacity: enabled ? 1 : 0.4,
-    child: GestureDetector(
-      onTap: enabled ? onTap : null,
-      child: Container(
-        height: 54,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFF443C68), width: 2),
-        ),
-        child: Text(
-          label,
-          style: const TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 1.2,
-            color: T.ink,
-          ),
-        ),
-      ),
+  void initState() {
+    super.initState();
+    _c.addStatusListener((s) {
+      if (s == AnimationStatus.completed) widget.onDone();
+    });
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => IgnorePointer(
+    child: AnimatedBuilder(
+      animation: _c,
+      builder: (context, _) {
+        return Stack(
+          children: [
+            for (var i = 0; i < widget.cards.length; i++)
+              Builder(builder: (context) {
+                final (from, card, width) = widget.cards[i];
+                // stagger so the dish assembles rather than teleporting as a block
+                final delay = i * 0.11;
+                final t = ((_c.value - delay) / (1 - delay)).clamp(0.0, 1.0);
+                final eased = Curves.easeInBack.transform(t);
+                final pos = Offset.lerp(from, widget.target - Offset(width / 2, width * 0.7), eased)!;
+                return Positioned(
+                  left: pos.dx,
+                  top: pos.dy,
+                  child: Opacity(
+                    opacity: 1 - Curves.easeIn.transform(t),
+                    child: Transform.scale(
+                      scale: 1 - 0.45 * eased,
+                      child: Transform.rotate(
+                        angle: (i.isEven ? 1 : -1) * 0.22 * eased,
+                        child: IngredientCard(card: card, width: width, selected: true),
+                      ),
+                    ),
+                  ),
+                );
+              }),
+          ],
+        );
+      },
     ),
   );
 }

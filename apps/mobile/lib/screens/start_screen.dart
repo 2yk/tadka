@@ -8,11 +8,18 @@ import 'package:game_core/game_core.dart' as gc;
 
 import '../game_controller.dart';
 import '../theme.dart';
+import '../widgets/buttons.dart';
 
-/// Mints a human-readable seed. This is the ONE place entropy enters a run — everything
-/// downstream is seeded, so a blank field still produces a fully replayable run rather than
-/// an unseeded one. The alphabet omits I/O/0/1 because players read seeds off a phone and
-/// retype them.
+/// Mints a run's seed. This is the ONE place entropy enters a run — everything downstream
+/// is seeded, so every run stays exactly reproducible.
+///
+/// There is deliberately no seed input on this screen: it asked the player to care about
+/// something that only matters after the fact. The seed is generated silently and surfaced
+/// on the summary screen, where "replay this exact run" is a thing you actually want.
+/// Determinism itself is load-bearing (bug reports, the future Daily Route, golden tests)
+/// and is unaffected by hiding the field.
+///
+/// The alphabet omits I/O/0/1 so a seed read off a phone can be retyped without ambiguity.
 String randomSeed() {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   final r = Random();
@@ -29,14 +36,6 @@ class StartScreen extends StatefulWidget {
 }
 
 class _StartScreenState extends State<StartScreen> {
-  final _seed = TextEditingController();
-
-  @override
-  void dispose() {
-    _seed.dispose();
-    super.dispose();
-  }
-
   @override
   Widget build(BuildContext context) {
     final c = widget.controller;
@@ -111,52 +110,17 @@ class _StartScreenState extends State<StartScreen> {
               );
             }),
 
-            const SizedBox(height: 22),
-            TextField(
-              controller: _seed,
-              style: const TextStyle(fontFamily: 'monospace', color: T.ink, fontSize: 15),
-              textCapitalization: TextCapitalization.characters,
-              decoration: InputDecoration(
-                hintText: 'seed — blank for random',
-                hintStyle: T.bodyDim.copyWith(fontSize: 14),
-                filled: true,
-                fillColor: T.panel,
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: T.line),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: T.brass),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            GestureDetector(
-              onTap: () {
-                final s = _seed.text.trim();
-                c.startRun(s.isEmpty ? randomSeed() : s);
-              },
-              child: Container(
-                height: 56,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [T.brassLight, T.brass],
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                  border: const Border(bottom: BorderSide(color: T.brassDark, width: 4)),
-                ),
-                child: const Text(
-                  '▶  START RUN',
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1.4,
-                    color: T.inkDark,
-                  ),
+            const SizedBox(height: 26),
+            PressableButton(
+              height: 60,
+              onTap: () => c.startRun(randomSeed()),
+              child: const Text(
+                '▶  PLAY',
+                style: TextStyle(
+                  fontSize: 19,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.6,
+                  color: T.inkDark,
                 ),
               ),
             ),
