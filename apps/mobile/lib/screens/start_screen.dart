@@ -6,8 +6,10 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:game_core/game_core.dart' as gc;
 
+import '../daily.dart';
 import '../game_controller.dart';
 import '../theme.dart';
+import '../widgets/juice.dart';
 import '../widgets/buttons.dart';
 
 /// Mints a run's seed. This is the ONE place entropy enters a run — everything downstream
@@ -111,6 +113,8 @@ class _StartScreenState extends State<StartScreen> {
             }),
 
             const SizedBox(height: 22),
+            _DailyCard(status: c.daily, onPlay: c.startDaily),
+            const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
@@ -203,6 +207,62 @@ class _Chip extends StatelessWidget {
             color: selected ? T.ink : T.dim,
           ),
         ),
+      ),
+    ),
+  );
+}
+
+/// Today's Daily Route.
+///
+/// Given top billing on the start screen because it is the one reason to open the app on a
+/// day you weren't otherwise going to play — which is exactly what a retention hook is for.
+/// It shows the streak even at zero, so the number is visibly something to protect.
+class _DailyCard extends StatelessWidget {
+  const _DailyCard({required this.status, required this.onPlay});
+
+  final DailyStatus status;
+  final VoidCallback onPlay;
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+    onTap: onPlay,
+    behavior: HitTestBehavior.opaque,
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: T.panel,
+        borderRadius: BorderRadius.circular(11),
+        border: Border.all(color: status.playedToday ? T.line : T.brass, width: 1.5),
+      ),
+      child: Row(
+        children: [
+          const Text('📅', style: TextStyle(fontSize: 20)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('DAILY ROUTE', style: T.label.copyWith(color: T.brass)),
+                const SizedBox(height: 2),
+                Text(
+                  status.playedToday
+                      ? 'Played today — tap to replay'
+                      : 'The same run for everyone, today only',
+                  style: T.bodyDim.copyWith(fontSize: 11.5),
+                ),
+              ],
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text('🔥 ${status.streak}', style: T.dish(15, color: T.brass)),
+              if (status.bestScore > 0)
+                Text('best ${formatScore(status.bestScore)}',
+                    style: T.label.copyWith(fontSize: 8.5)),
+            ],
+          ),
+        ],
       ),
     ),
   );

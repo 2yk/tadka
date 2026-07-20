@@ -11,6 +11,8 @@ import 'package:flutter/foundation.dart';
 import 'package:game_core/game_core.dart' as gc;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'daily.dart';
+
 /// Which screen the run is currently sitting on.
 enum Phase { start, service, bazaar, summary, victory, recipeBook, help }
 
@@ -69,8 +71,28 @@ class GameController extends ChangeNotifier {
   String deckId = 'home';
   int stake = 1;
 
+  /// True while the current run is today's Daily Route, so the summary can record it and the
+  /// UI can label it. Cleared by any normal run.
+  bool isDaily = false;
+
+  /// Injected so tests can pin a date instead of depending on when they run.
+  DateTime Function() now = DateTime.now;
+
+  DailyStatus get daily => dailyStatus(now());
+
+  /// Starts today's Daily on fixed settings — a deck or stake choice would make scores
+  /// incomparable, which is the only thing the mode is for.
+  void startDaily() {
+    deckId = kDailyDeck;
+    stake = kDailyStake;
+    startRun(dailySeed(now()));
+    isDaily = true;
+    notifyListeners();
+  }
+
   void startRun(String seed) {
     run = gc.newRun(seed: seed, stake: stake, deckId: deckId);
+    isDaily = false;
     final needsRules = !_seenHelp;
     phase = Phase.service;
     selected.clear();
@@ -207,6 +229,7 @@ class GameController extends ChangeNotifier {
     if (gc.isFinalService(r)) {
       gc.onRunWon(r);
       r.status = 'won';
+      if (isDaily) recordDaily(now(), r.totalScore);
       phase = Phase.victory;
     } else {
       offers = gc.rollOffers(r);
@@ -218,6 +241,7 @@ class GameController extends ChangeNotifier {
 
   void afterServiceLost() {
     gc.recordLoss(run!);
+    if (isDaily) recordDaily(now(), run!.totalScore);
     phase = Phase.summary;
     _drainToasts();
     notifyListeners();
