@@ -199,6 +199,11 @@ const List<String> kStartUtensils = [
   // expansion — uncommons
   'chile_roaster', 'parmesan_wheel', 'cataplana', 'sushi_geta', 'comal', 'metate',
   'saj_griddle', 'braai_grid', 'mangal_grill', 'billig', 'tagine', 'hawker_stall',
+  // v1.0 pass — commons
+  'ttukbaegi', 'mezzaluna', 'jebena', 'cezve', 'miso_keg', 'berbere_mill', 'otoshibuta',
+  // v1.0 pass — uncommons
+  'gamasot', 'tiella', 'zeer', 'tamarind_press', 'sugarcane_press', 'suribachi',
+  'dashi_kettle', 'mesob', 'kanoun', 'chatti', 'souk_stall',
 ];
 
 /// The Rares the Royal deck may hand a player who has not unlocked any yet.
@@ -553,6 +558,13 @@ List<Utensil> unlockedUtensilPool() =>
 /// The differential traces in `test/runs_test.dart` narrow it to the ported six so they keep
 /// pinning the run machine against a JS engine that has never heard of the other fourteen.
 List<Blend> activeBlendCatalog = kBlends;
+
+/// The festival catalog the shop draws from. Third instance of the same seam, same reason.
+///
+/// `rollOffers` does `rng.pick` over this list, so its length decides which festival a given
+/// roll produces — appending three to a list of seven re-rolls every recorded festival offer.
+/// `test/runs_test.dart` narrows it to [kPortedFestivals]; live play gets all ten.
+List<Festival> activeFestivalCatalog = kFestivals;
 
 List<Deck> unlockedDecks() =>
     kDecks.where((d) => !d.reserved && isUnlocked('deck', d.id)).toList();

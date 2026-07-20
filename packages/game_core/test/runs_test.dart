@@ -390,10 +390,15 @@ void main() {
     activeUtensilCatalog =
         kUtensils.where((u) => _portedUtensilIds.contains(u.id)).toList();
     activeBlendCatalog = kBlends.where((b) => _portedBlendIds.contains(b.id)).toList();
+    // Same seam a third time: `rollOffers` picks a festival by index, so the seven the JS
+    // engine knows must be the seven a recorded roll chooses between. [kPortedFestivals] is
+    // that list by construction — it is the head of [kFestivals], not a copy of it.
+    activeFestivalCatalog = kPortedFestivals;
   });
   tearDownAll(() {
     activeUtensilCatalog = kUtensils;
     activeBlendCatalog = kBlends;
+    activeFestivalCatalog = kFestivals;
   });
 
   final file = File('test/vectors.json');

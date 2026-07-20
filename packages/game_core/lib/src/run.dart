@@ -615,7 +615,7 @@ List<Offer> rollOffers(RunState run) {
   for (var k = 0; k < 3; k++) {
     final roll = run.rng.next();
     if (roll < 0.28) {
-      final f = run.rng.pick(kFestivals);
+      final f = run.rng.pick(activeFestivalCatalog);
       offers.add(Offer(kind: 'festival', id: f.id, name: f.name, cost: f.cost + infl, pattern: f.pattern, rarity: 'festival'));
     } else if (roll < 0.46) {
       final b = run.rng.pick(activeBlendCatalog);

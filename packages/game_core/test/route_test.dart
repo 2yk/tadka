@@ -10,6 +10,27 @@ library;
 import 'package:game_core/game_core.dart';
 import 'package:test/test.dart';
 
+Card _c(String family, int rank) =>
+    Card(id: '${family}_$rank', family: family, rank: rank, display: kNames[family]![rank - 1]);
+
+/// One critic's demand, stated as dishes rather than as fields: what it turns away at the
+/// COOK button, and what it lets through. A demand nothing can violate is not a demand.
+class _CriticGate {
+  const _CriticGate(this.id, {required this.allows, required this.rejects, this.debuffs});
+
+  final String id;
+
+  /// A dish `dishError` must accept.
+  final List<Card> allows;
+
+  /// Dishes it must turn away — one per clause, so a compound demand is fully covered.
+  final List<List<Card>> rejects;
+
+  /// For scoring demands: the family that must contribute 0 intensity. A debuff critic never
+  /// rejects anything, so legality alone would pass it while it silently did nothing.
+  final String? debuffs;
+}
+
 /// Walks a run's route by clearing every service, and reports what it saw.
 ///
 /// Drives the real state machine — `advance` and `isFinalService` decide when the route
@@ -119,6 +140,139 @@ void main() {
         // A cap below 3 would hold the player under Three of a Kind even on a Lunch Rush.
         if (c.maxCards != null) expect(c.maxCards, greaterThanOrEqualTo(3), reason: c.id);
       }
+    });
+  });
+
+  group('every critic demands something a dish can actually fail', () {
+    // The field-level check above proves a critic *states* a demand. It cannot tell a demand
+    // apart from a typo: `requireFamily: 'ummami'` has a demand, a rule string and no effect
+    // whatsoever on play. These cases run the real `dishError` and the real `scoreDish`.
+    // Built lazily rather than as a const: `_c` reads display names out of [kNames].
+    final table = <_CriticGate>[
+      _CriticGate('minimalist',
+          allows: [_c('spicy', 3), _c('sweet', 4), _c('sour', 5)],
+          rejects: [
+            [_c('spicy', 3), _c('sweet', 4), _c('sour', 5), _c('salty', 6)],
+          ]),
+      _CriticGate('gourmand',
+          allows: [_c('spicy', 3), _c('sweet', 4), _c('sour', 5), _c('salty', 6)],
+          rejects: [
+            [_c('spicy', 3), _c('sweet', 4), _c('sour', 5)],
+          ]),
+      _CriticGate('firebrand',
+          allows: [_c('spicy', 3), _c('sweet', 4)],
+          rejects: [
+            [_c('umami', 3), _c('sweet', 4)],
+          ]),
+      _CriticGate('brine_baron',
+          allows: [_c('salty', 3), _c('sweet', 4)],
+          rejects: [
+            [_c('umami', 3), _c('sweet', 4)],
+          ]),
+      _CriticGate('traditionalist',
+          allows: [_c('sweet', 3), _c('sour', 4)], rejects: [], debuffs: 'sweet'),
+      _CriticGate('austere',
+          allows: [_c('umami', 3), _c('sour', 4)], rejects: [], debuffs: 'umami'),
+      _CriticGate('ascetic',
+          allows: [_c('spicy', 3), _c('sour', 4)], rejects: [], debuffs: 'spicy'),
+
+      // --- v1.0 pass ---
+      // Compound: one rejection per clause, or half the demand goes untested.
+      _CriticGate('connoisseur',
+          allows: [_c('umami', 3), _c('sweet', 4), _c('sour', 5)],
+          rejects: [
+            [_c('umami', 3), _c('sweet', 4)], // 2 cards — under the floor
+            [_c('spicy', 3), _c('sweet', 4), _c('sour', 5)], // no Umami
+          ]),
+      _CriticGate('maximalist',
+          allows: [
+            _c('spicy', 3), _c('sweet', 4), _c('sour', 5), _c('salty', 6), _c('umami', 7),
+          ],
+          rejects: [
+            [_c('spicy', 3), _c('sweet', 4), _c('sour', 5), _c('salty', 6)],
+          ]),
+      _CriticGate('contrarian',
+          allows: [_c('sour', 3), _c('sweet', 4)], rejects: [], debuffs: 'sour'),
+      _CriticGate('perfectionist',
+          allows: [_c('salty', 3), _c('sweet', 4), _c('sour', 5)],
+          rejects: [
+            [_c('salty', 3), _c('sweet', 4)],
+          ],
+          debuffs: 'salty'),
+    ];
+
+    test('every major critic has a case', () {
+      expect(table.map((g) => g.id).toSet(), equals(kCritics.keys.toSet()),
+          reason: 'a critic with no gate case — add one to `table`');
+      expect(table.length, equals(kCritics.length), reason: 'duplicate gate case');
+    });
+
+    for (final g in table) {
+      final c = kCritics[g.id]!;
+      test('${g.id} — ${c.rule}', () {
+        expect(dishError(g.allows, c), isNull,
+            reason: '${g.id} turned away a dish that meets its rule');
+        for (var i = 0; i < g.rejects.length; i++) {
+          expect(dishError(g.rejects[i], c), isNotNull,
+              reason: '${g.id} accepted illegal dish $i — a clause of its rule does nothing');
+          // The same dish must be fine with no critic present, or the case proves nothing.
+          expect(dishError(g.rejects[i], null), isNull, reason: '${g.id} miss $i is not a legal dish');
+        }
+        final fam = g.debuffs;
+        if (fam != null) {
+          // A debuff is invisible to dishError: it lands in cardContribution. Score the same
+          // dish with and without the critic and require the debuffed family to go to zero.
+          // Three cards, so the dish is legal under every floor in the pool as well — a
+          // debuff critic that also has a minCards clause is scored on a dish it would allow.
+          final other = fam == 'umami' ? 'sour' : 'umami';
+          final dish = [_c(fam, 9), _c(other, 9), _c(other, 8)];
+          expect(dishError(dish, c), isNull, reason: '${g.id}: the debuff case must be legal');
+          final free = scoreDish(dish, const ScoreContext());
+          final judged = scoreDish(dish, ScoreContext(critic: c));
+          expect(free.scoring.map((x) => x.family), contains(fam),
+              reason: '${g.id}: the debuffed card is not even a scoring card');
+          expect(judged.flavor, equals(free.flavor - 9),
+              reason: '${g.id} debuffs $fam, but a rank-9 $fam card still scored');
+        } else {
+          expect(c.debuff, isNull, reason: '${g.id} carries a debuff with no case for it');
+        }
+      });
+    }
+  });
+
+  group('the critic pool covers the cities without orphans', () {
+    test('every critic is somebody\'s Food Critic, and every city names a real one', () {
+      // Both directions at once. Content that no city can roll is content nobody will ever
+      // see, which is the quieter half of "does this feel finished".
+      expect(kCityPool.map((c) => c.critic).toSet(), equals(kCritics.keys.toSet()));
+    });
+
+    test('the finale candidate set is byte-for-byte what drawRoute has always drawn from', () {
+      // THE seeded-list trap, reached by a road that is not a `pick` over a catalog.
+      // `drawRoute` picks the last city from those whose critic passes criticCanCloseARun, so
+      // that filtered list's contents and ORDER decide every existing seed's finale. Swapping
+      // a city's critic for one with a different verdict re-rolls all of them silently.
+      final candidates = kCityPool
+          .where((c) => c.id != kStartCityId && criticCanCloseARun(kCritics[c.critic]!))
+          .map((c) => c.id)
+          .toList();
+      expect(candidates,
+          equals(['seoul', 'tokyo', 'beirut', 'marrakech', 'naples', 'oaxaca', 'lima', 'new_orleans']));
+    });
+
+    test('the v1.0 critics keep the invariant their host city was placed under', () {
+      // Addis Ababa was the Firebrand's second home and must stay unable to close a run;
+      // the other three took over from critics that could, and must stay able to.
+      expect(criticCanCloseARun(kCritics['connoisseur']!), isFalse,
+          reason: 'a required family can make a Flush impossible — it cannot end a run');
+      for (final id in ['maximalist', 'contrarian', 'perfectionist']) {
+        expect(criticCanCloseARun(kCritics[id]!), isTrue, reason: '$id took over a finale city');
+      }
+      // The Maximalist is the reason the invariant is about ceilings and not about severity:
+      // it is a harsher demand than the Gourmand it replaced, and still perfectly safe,
+      // because a floor of 5 leaves the whole recipe ladder reachable.
+      expect(kCritics['maximalist']!.maxCards, isNull);
+      expect(kCritics['maximalist']!.minCards, equals(5));
     });
   });
 

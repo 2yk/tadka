@@ -67,10 +67,14 @@ Utensil _u(String id) => kUtensilById[id]!;
 void main() {
   group('suggestDishes', () {
     test('never suggests a dish the critic would reject', () {
+      // Every critic the game can put in front of a player, not a sample of them: a demand
+      // the solver mishandles shows up as an illegal suggestion, and the player finds out by
+      // tapping COOK and being refused. The v1.0 pass added the first compound majors
+      // (Connoisseur, Perfectionist) and the first floor of 5 (Maximalist), which are exactly
+      // the shapes a `maxCards`-only cap in the solver would get wrong.
       for (final critic in <Critic?>[
         null,
-        kCritics['minimalist'],
-        kCritics['traditionalist'],
+        ...kCritics.values,
         ...kMinorCritics,
       ]) {
         final run = _runWith(hand: _mixedHand(), critic: critic);

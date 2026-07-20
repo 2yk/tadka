@@ -102,6 +102,14 @@ final List<Card> _four3NoSalty = [_sp(1), _sw(2), _so(3), _um(4)];
 final List<Card> _three3Salty = [_sa(1), _sw(2), _so(3)];
 final List<Card> _pairSour = [_so(3), _sw(5)];
 
+/// Three of a Kind with no Sour card — the counter-example for `sumac_mill`'s family clause,
+/// mirroring how [_threeKindNoSweet] serves `maple_evaporator`.
+final List<Card> _threeKindNoSour = [_sp(4), _sw(4), _sa(4)];
+
+/// Five cards of one rank across five families: the lowest secret recipe, and the only dish
+/// that opens `jubako`'s gate. Reachable in play only through blend duplication.
+final List<Card> _fiveKind = [_sp(5), _sw(5), _so(5), _sa(5), _um(5)];
+
 /// One dish, plus the service position it is played from.
 class _Dish {
   const _Dish(this.cards, {this.first = false, this.last = false});
@@ -130,6 +138,19 @@ ScoreResult _score(_Dish d, List<String> utensils) => scoreDish(
 ) {
   var flavor = base.flavor;
   var heat = base.heat;
+  // Retriggers run their own pass ahead of the per-dish utensils (§4 step 5 before step 6),
+  // and re-score the highest-intensity *scoring* card — extras played beyond the pattern are
+  // never the target. Computed from `cardContribution` rather than from `scoreDish`, so this
+  // stays a cross-check of the retrigger pass and not a restatement of it.
+  if (effect['retrigger_highest'] == true && base.scoring.isNotEmpty) {
+    var hi = base.scoring.first;
+    for (final c in base.scoring) {
+      if (c.rank > hi.rank) hi = c;
+    }
+    final c = cardContribution(hi, const ScoreContext());
+    flavor += c.dF;
+    heat += c.dH;
+  }
   final flavorAdd = effect['flavor_add'] as num?;
   if (flavorAdd != null) flavor += flavorAdd;
   final heatAdd = effect['heat_add'] as num?;
@@ -359,6 +380,41 @@ void main() {
     _Gate('clay_tandir', hit: _Dish(_flush), misses: [_Dish(_pair)]),
     _Gate('stone_mortar', hit: _Dish(_one), misses: [_Dish(_pair)]),
     _Gate('harvest_basket', hit: _Dish(_fullHouse), misses: [_Dish(_flush)]),
+
+    // === v1.0 pass ========================================================
+    // --- commons: the dish-shape and timing rungs the first pass left open ---
+    _Gate('ttukbaegi', hit: _Dish(_four3Salty), misses: [_Dish(_high3)]),
+    _Gate('mezzaluna', hit: _Dish(_pair), misses: [_Dish(_high3)]),
+    _Gate('jebena', hit: _Dish(_high3, first: true), misses: [_Dish(_high3)]),
+    _Gate('cezve', hit: _Dish(_high3, last: true), misses: [_Dish(_high3)]),
+    _Gate('miso_keg', hit: _Dish(_allSalty), misses: [_Dish(_high3)]),
+    _Gate('berbere_mill',
+        hit: _Dish(_four3NoSalty), misses: [_Dish(_high3), _Dish(_four3Salty)]),
+    // The conditional retrigger. `_expected` re-scores the highest scoring card for this one,
+    // so the hit case checks the retrigger pass actually ran, not just that nothing crashed.
+    _Gate('otoshibuta', hit: _Dish(_threeKind), misses: [_Dish(_pair)]),
+    // --- uncommons: recipe rungs, the last two family multipliers, flavour below Rare ---
+    _Gate('gamasot', hit: _Dish(_threeKind), misses: [_Dish(_pair)]),
+    _Gate('tiella', hit: _Dish(_fullHouse), misses: [_Dish(_flush)]),
+    _Gate('zeer', hit: _Dish(_allSalty), misses: [_Dish(_high3)]),
+    _Gate('tamarind_press', hit: _Dish(_allSour), misses: [_Dish(_high3)]),
+    _Gate('sugarcane_press', hit: _Dish(_allSweet), misses: [_Dish(_high3)]),
+    _Gate('suribachi', hit: _Dish(_high3), misses: [_Dish(_pair)]),
+    _Gate('dashi_kettle', hit: _Dish(_withUmami), misses: [_Dish(_high3)]),
+    _Gate('mesob', hit: _Dish(_high3, last: true), misses: [_Dish(_high3)]),
+    _Gate('kanoun', hit: _Dish(_twoPair), misses: [_Dish(_pair)]),
+    _Gate('chatti', hit: _Dish(_allSpicy), misses: [_Dish(_high3)]),
+    _Gate('souk_stall', hit: _Dish(_allSpicy), misses: [_Dish(_high3)]),
+    // --- rares: five of the eight multiply flavour ---
+    _Gate('mole_olla', hit: _Dish(_flush), misses: [_Dish(_straight)]),
+    _Gate('pachamanca_stones', hit: _Dish(_straight), misses: [_Dish(_threeKind)]),
+    _Gate('sumac_mill',
+        hit: _Dish(_threeKind), misses: [_Dish(_threeKindNoSour), _Dish(_pairSour)]),
+    _Gate('couscoussier', hit: _Dish(_straight), misses: [_Dish(_fourKind)]),
+    _Gate('uruli', hit: _Dish(_fourKind), misses: [_Dish(_fullHouse)]),
+    _Gate('konro_grill', hit: _Dish(_allSpicy), misses: [_Dish(_high3)]),
+    _Gate('tiffin_carrier', hit: _Dish(_threeKind), misses: [_Dish(_pair)]),
+    _Gate('jubako', hit: _Dish(_fiveKind), misses: [_Dish(_fourKind)]),
   ];
 
   group('expansion utensils fire on their gate and only on their gate', () {
@@ -440,6 +496,32 @@ void main() {
         expect(u.effect.containsKey('heat_mult'), isFalse,
             reason: '${u.id} is a common with a heat multiplier');
       }
+    });
+
+    test('no common carries a flavour multiplier either', () {
+      // Same argument as the heat rule above, and it needs stating separately because
+      // `flavor_mult` arrived after that test did: multipliers compound across the five
+      // slots, so a 4-coin ×1.5 is a trap. Commons add; uncommons and rares multiply.
+      for (final u in kUtensils) {
+        if (u.rarity != 'common') continue;
+        expect(u.effect.containsKey('flavor_mult'), isFalse,
+            reason: '${u.id} is a common with a flavour multiplier');
+      }
+    });
+
+    test('flavour is a real second scaling axis, not a rare-only curiosity', () {
+      // The v1.0 pass exists partly because heat was the only multiplicative track, which
+      // made additive-flavour commons go dead as Kitchen level inflated the base. If a future
+      // retune strips flavor_mult back to a handful of Rares, that regression is silent —
+      // every other test still passes and the sim ladder barely twitches.
+      final flavourMults = kUtensils.where((u) => u.effect.containsKey('flavor_mult')).toList();
+      final heatMults = kUtensils.where((u) => u.effect.containsKey('heat_mult')).toList();
+      expect(flavourMults.length, greaterThanOrEqualTo(10),
+          reason: 'flavour multipliers have thinned out to a curiosity again');
+      expect(flavourMults.length, greaterThanOrEqualTo((heatMults.length * 0.6).ceil()),
+          reason: 'flavour is falling behind heat as a multiplicative track');
+      expect(flavourMults.any((u) => u.rarity == 'uncommon'), isTrue,
+          reason: 'no flavour multiplier below Rare — the axis is unreachable mid-run');
     });
 
     test('a retrigger obeys its condition', () {

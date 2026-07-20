@@ -331,6 +331,78 @@ const List<Utensil> kUtensils = [
   Utensil(id: 'clay_tandir', name: 'Clay Tandır', rarity: 'rare', cost: 9, trigger: 'on_dish', condition: {'all_cards_same_family': true}, effect: {'flavor_mult': 2}, text: '×2 flavor if every ingredient shares a family'),
   Utensil(id: 'stone_mortar', name: 'Stone Mortar', rarity: 'rare', cost: 9, trigger: 'on_dish', condition: {'num_cards': 1}, effect: {'flavor_mult': 3}, text: '×3 flavor on a single-ingredient dish'),
   Utensil(id: 'harvest_basket', name: 'Harvest Basket', rarity: 'rare', cost: 9, trigger: 'on_dish', condition: {'pattern_at_least': 'full_house'}, effect: {'flavor_mult': 1.75}, text: '×1.75 flavor if the recipe is Full House or better'),
+
+  // -------------------------------------------------------------------------
+  // v1.0 content pass — the run to the concept doc's 90-110 launch target.
+  //
+  // Same three rules as the block above (no new DSL keys, commons only add,
+  // family multipliers stay mutually exclusive), plus two the first pass taught:
+  //
+  // 4. **Flavour is the under-built axis.** The first pass shipped four
+  //    `flavor_mult` rares against a dozen ways to multiply heat, so "stack
+  //    flavour" was still a stopgap rather than a plan. Nine of the twenty-six
+  //    below multiply flavour, four of them at uncommon, which is what makes it
+  //    a route through the game instead of a late-run luxury.
+  // 5. **Nothing may strictly dominate an existing entry.** A wider gate for the
+  //    same effect at the same cost does not add a decision, it deletes one — so
+  //    e.g. there is no `pattern_at_least: 'flush'` heat multiplier, because it
+  //    would retire Comal. Where two entries share a gate they differ in kind
+  //    (Chatti adds heat where Konro Grill multiplies it), which is a real
+  //    trade: additive wins at low Kitchen level, multiplicative wins late.
+  //
+  // The stacking ceiling was checked rather than assumed. Five slots of pure
+  // heat multiplier is ×27 and was already reachable; five slots of pure flavour
+  // multiplier is ×18; the best mixed rack is ×48 on a single-cook service, and
+  // needs an exact five-card same-family four-of-a-kind to get there. That is a
+  // build, not an accident.
+
+  // commons (cost 4) — the rungs the first pass left empty, not more of the grid.
+  Utensil(id: 'ttukbaegi', name: 'Ttukbaegi', rarity: 'common', cost: 4, trigger: 'on_dish', condition: {'num_cards': 4}, effect: {'flavor_add': 30}, text: '+30 flavor if the dish uses exactly 4 ingredients'),
+  Utensil(id: 'mezzaluna', name: 'Mezzaluna', rarity: 'common', cost: 4, trigger: 'on_dish', condition: {'pattern_at_least': 'pair'}, effect: {'flavor_add': 20}, text: '+20 flavor if the recipe is a Pair or better'),
+  Utensil(id: 'jebena', name: 'Jebena', rarity: 'common', cost: 4, trigger: 'on_dish', condition: {'is_first_dish': true}, effect: {'coin_add': 2}, text: '+2 coins on the first dish of each service'),
+  Utensil(id: 'cezve', name: 'Cezve', rarity: 'common', cost: 4, trigger: 'on_dish', condition: {'is_last_dish': true}, effect: {'heat_add': 4}, text: 'Last dish of each service gets +4 heat'),
+  Utensil(id: 'miso_keg', name: 'Miso Keg', rarity: 'common', cost: 4, trigger: 'on_dish', condition: {'all_cards_family': 'salty'}, effect: {'flavor_add': 30}, text: '+30 flavor if every ingredient is Salty'),
+  Utensil(id: 'berbere_mill', name: 'Berbere Mill', rarity: 'common', cost: 4, trigger: 'on_dish', condition: {'contains_family': 'spicy', 'min_cards': 4}, effect: {'heat_add': 4}, text: '+4 heat if the dish has 4+ ingredients and contains a Spicy one'),
+  // The only conditional retrigger in the catalog, and the reason `_condMet` now runs on the
+  // retrigger pass at all. It is a common because a retrigger is *additive* — it re-scores one
+  // card, worth about what a common's flat bonus is — and because gating it makes it strictly
+  // worse than the Pressure Cooker, which is only a fair offer at a lower price.
+  Utensil(id: 'otoshibuta', name: 'Otoshibuta', rarity: 'common', cost: 4, trigger: 'on_card', condition: {'pattern_at_least': 'three_kind'}, effect: {'retrigger_highest': true}, text: 'Retrigger the highest-intensity ingredient on Three of a Kind or better'),
+
+  // uncommons (cost 6) — the recipe rungs and the two families the multiplier
+  // grid was missing, plus flavour's first multipliers below Rare.
+  Utensil(id: 'gamasot', name: 'Gamasot', rarity: 'uncommon', cost: 6, trigger: 'on_dish', condition: {'pattern_is': 'three_kind'}, effect: {'heat_mult': 1.5}, text: '×1.5 heat if the recipe is Three of a Kind'),
+  Utensil(id: 'tiella', name: 'Tiella', rarity: 'uncommon', cost: 6, trigger: 'on_dish', condition: {'pattern_is': 'full_house'}, effect: {'heat_mult': 1.5}, text: '×1.5 heat if the recipe is a Full House'),
+  // One multiplier per family, and no two can fire on the same dish: Spicy and Umami already
+  // had heat (Tandoor, Parmesan Wheel), so Salty completes heat and Sour and Sweet take
+  // flavour. Five families, five exclusive multipliers, ceiling unchanged.
+  Utensil(id: 'zeer', name: 'Zeer', rarity: 'uncommon', cost: 6, trigger: 'on_dish', condition: {'all_cards_family': 'salty'}, effect: {'heat_mult': 1.5}, text: '×1.5 heat if every ingredient is Salty'),
+  Utensil(id: 'tamarind_press', name: 'Tamarind Press', rarity: 'uncommon', cost: 6, trigger: 'on_dish', condition: {'all_cards_family': 'sour'}, effect: {'flavor_mult': 1.5}, text: '×1.5 flavor if every ingredient is Sour'),
+  Utensil(id: 'sugarcane_press', name: 'Sugarcane Press', rarity: 'uncommon', cost: 6, trigger: 'on_dish', condition: {'all_cards_family': 'sweet'}, effect: {'flavor_mult': 1.5}, text: '×1.5 flavor if every ingredient is Sweet'),
+  Utensil(id: 'suribachi', name: 'Suribachi', rarity: 'uncommon', cost: 6, trigger: 'on_dish', condition: {'num_cards': 3}, effect: {'flavor_mult': 1.5}, text: '×1.5 flavor if the dish uses exactly 3 ingredients'),
+  Utensil(id: 'dashi_kettle', name: 'Dashi Kettle', rarity: 'uncommon', cost: 6, trigger: 'on_dish', condition: {'contains_family': 'umami'}, effect: {'flavor_per_card': 8}, text: '+8 flavor per ingredient if the dish contains an Umami one'),
+  Utensil(id: 'mesob', name: 'Mesob', rarity: 'uncommon', cost: 6, trigger: 'on_dish', condition: {'is_last_dish': true}, effect: {'flavor_mult': 1.5}, text: 'Last dish of each service gets ×1.5 flavor'),
+  Utensil(id: 'kanoun', name: 'Kanoun', rarity: 'uncommon', cost: 6, trigger: 'on_dish', condition: {'pattern_at_least': 'two_pair'}, effect: {'heat_add': 4}, text: '+4 heat if the recipe is Two Pair or better'),
+  Utensil(id: 'chatti', name: 'Chatti', rarity: 'uncommon', cost: 6, trigger: 'on_dish', condition: {'all_cards_same_family': true}, effect: {'heat_add': 6}, text: '+6 heat if all ingredients share a flavor family'),
+  Utensil(id: 'souk_stall', name: 'Souk Stall', rarity: 'uncommon', cost: 6, trigger: 'on_dish', condition: {'all_cards_same_family': true}, effect: {'coin_add': 3}, text: '+3 coins if all ingredients share a flavor family'),
+
+  // rares (cost 9) — five of the eight multiply flavour, which is the whole point
+  // of this pass. Each names a different build: the Flush, the ladder, the Sour
+  // engine, the five-card dish, the top of the recipe order.
+  Utensil(id: 'mole_olla', name: 'Mole Olla', rarity: 'rare', cost: 9, trigger: 'on_dish', condition: {'pattern_is': 'flush'}, effect: {'flavor_mult': 2}, text: '×2 flavor if the recipe is a Flush'),
+  Utensil(id: 'pachamanca_stones', name: 'Pachamanca Stones', rarity: 'rare', cost: 9, trigger: 'on_dish', condition: {'pattern_at_least': 'straight'}, effect: {'flavor_mult': 1.5}, text: '×1.5 flavor if the recipe is a Straight or better'),
+  Utensil(id: 'sumac_mill', name: 'Sumac Mill', rarity: 'rare', cost: 9, trigger: 'on_dish', condition: {'contains_family': 'sour', 'pattern_at_least': 'three_kind'}, effect: {'flavor_mult': 2}, text: '×2 flavor on Three of a Kind or better containing a Sour ingredient'),
+  Utensil(id: 'couscoussier', name: 'Couscoussier', rarity: 'rare', cost: 9, trigger: 'on_dish', condition: {'num_cards': 5}, effect: {'flavor_mult': 1.75}, text: '×1.75 flavor if the dish uses 5 ingredients'),
+  Utensil(id: 'uruli', name: 'Uruli', rarity: 'rare', cost: 9, trigger: 'on_dish', condition: {'pattern_at_least': 'four_kind'}, effect: {'flavor_mult': 2}, text: '×2 flavor if the recipe is Four of a Kind or better'),
+  Utensil(id: 'konro_grill', name: 'Konro Grill', rarity: 'rare', cost: 9, trigger: 'on_dish', condition: {'all_cards_same_family': true}, effect: {'heat_mult': 2}, text: '×2 heat if all ingredients share a flavor family'),
+  // The economy rare. Vendors topped out at +2 coins, which never adds up to a
+  // Festival; +4 on a recipe you were cooking anyway is a run built on Kitchen
+  // level rather than on the rack. Not in [kVendorIds] — that list is pinned by
+  // the Street Hawker unlock's recorded traces.
+  Utensil(id: 'tiffin_carrier', name: 'Tiffin Carrier', rarity: 'rare', cost: 9, trigger: 'on_dish', condition: {'pattern_at_least': 'three_kind'}, effect: {'coin_add': 4}, text: '+4 coins on Three of a Kind or better'),
+  // The only payoff attached to the secret recipes. Deliberately a lottery ticket:
+  // Five of a Kind needs blend manipulation to reach at all, so this pays like one.
+  Utensil(id: 'jubako', name: 'Jubako', rarity: 'rare', cost: 9, trigger: 'on_dish', condition: {'pattern_at_least': 'five_kind'}, effect: {'flavor_add': 250, 'heat_add': 20}, text: 'Five of a Kind or better gets +250 flavor and +20 heat'),
 ];
 
 final Map<String, Utensil> kUtensilById = {for (final u in kUtensils) u.id: u};
@@ -421,7 +493,15 @@ const List<Blend> kBlends = [
 final Map<String, Blend> kBlendById = {for (final b in kBlends) b.id: b};
 
 /// Festival Cards — each purchase is a permanent Kitchen level for the run.
-const List<Festival> kFestivals = [
+///
+/// **The first seven are the ported M0 set and are frozen at the head of the list.**
+/// `rollOffers` picks a festival by index off the seeded RNG, so the list's *length* is part
+/// of the seed contract — the differential traces replay against [kPortedFestivals] via
+/// [activeFestivalCatalog] for exactly that reason. Append; never insert or reorder.
+///
+/// One festival per recipe, and every recipe at most one: a duplicate would be two shop slots
+/// making the same offer under two names. `test/festivals_test.dart` asserts both directions.
+const List<Festival> kPortedFestivals = [
   Festival(id: 'fest_pair', pattern: 'pair', name: 'Sankranti', cost: 3),
   Festival(id: 'fest_three', pattern: 'three_kind', name: 'Onam', cost: 3),
   Festival(id: 'fest_straight', pattern: 'straight', name: 'Baisakhi', cost: 3),
@@ -429,6 +509,25 @@ const List<Festival> kFestivals = [
   Festival(id: 'fest_full', pattern: 'full_house', name: 'Diwali', cost: 3),
   Festival(id: 'fest_four', pattern: 'four_kind', name: 'Pongal', cost: 4),
   Festival(id: 'fest_sflush', pattern: 'straight_flush', name: 'Kumbh Mela', cost: 4),
+];
+
+/// The full festival catalog: the ported seven plus the v1.0 pass.
+///
+/// The ported set is all-Indian because the M0 route was Kochi/Tokyo/Naples and the calendar
+/// was written before the pool widened to twelve cities. These three follow the route instead
+/// — Japan, Thailand, Peru — and are real celebrations on the same register: a season, a new
+/// year, a solstice. None reuses a name already spoken for by [kDishNames].
+///
+/// Only three recipes were left uncovered that a player will meet in a normal run — High Card
+/// and Two Pair — plus the three secret recipes. Five of a Kind gets the third card because it
+/// is the *reachable* secret: Lievito Madre, Conserva and Sun-Dry all build toward it, so
+/// naming it in the shop is a nudge rather than a tease. Family Feast and Perfect Palate stay
+/// unlisted; a Festival for a recipe shown as ??? in the Recipe Book would read as a bug.
+const List<Festival> kFestivals = [
+  ...kPortedFestivals,
+  Festival(id: 'fest_high', pattern: 'high_card', name: 'Hanami', cost: 3),
+  Festival(id: 'fest_two_pair', pattern: 'two_pair', name: 'Songkran', cost: 3),
+  Festival(id: 'fest_five', pattern: 'five_kind', name: 'Inti Raymi', cost: 4),
 ];
 
 final Map<String, Festival> kFestivalById = {for (final f in kFestivals) f.id: f};
@@ -573,6 +672,56 @@ const Map<String, Critic> kCritics = {
     rule: 'Every dish must contain a Salty ingredient',
     requireFamily: 'salty',
   ),
+
+  // --- v1.0 pass ------------------------------------------------------------------------
+  // Four demands the first seven could state but never did, still inside the same four
+  // fields. Each takes over a city that was sharing a critic with another, so the pool went
+  // from seven critics across twelve cities to eleven — see [kCityPool].
+  //
+  // The concept doc's other two are deliberately still missing, because neither is
+  // expressible: The Rival Chef ("beat the target within 3 dishes") needs a per-service cook
+  // budget the Critic type does not carry, and The Health Inspector ("your leftmost utensil
+  // is disabled") needs `scoreDish` to skip a slot. Both are engine changes. See the report.
+
+  /// The first authored critic to state *two* demands at once. `mergeCritics` has produced
+  /// compound critics on the Long Route since M0, so the engine has always handled them —
+  /// nothing on the normal route had ever asked.
+  'connoisseur': Critic(
+    id: 'connoisseur',
+    name: 'The Connoisseur',
+    rule: 'Every dish must contain an Umami ingredient and use at least 3',
+    minCards: 3,
+    requireFamily: 'umami',
+  ),
+
+  /// The Minimalist inverted, and the reason it is safe where that one is not: a floor
+  /// constrains which dish you cook, a ceiling constrains which dishes *exist*. Five cards
+  /// can still make anything on the ladder, so [criticCanCloseARun] passes it.
+  'maximalist': Critic(
+    id: 'maximalist',
+    name: 'The Maximalist',
+    rule: 'Dishes must use all 5 ingredients',
+    minCards: 5,
+  ),
+
+  /// Sits on Lima, whose palate pays +40% flavour on Sour — so the demand deletes the city's
+  /// own bonus for one service. The first major debuff on Sour; the Sour Skeptic is a minor.
+  'contrarian': Critic(
+    id: 'contrarian',
+    name: 'The Contrarian',
+    rule: 'Sour ingredients contribute 0 intensity (and no palate bonus)',
+    debuff: 'sour',
+  ),
+
+  /// A floor and a debuff together: you must go wide, and the widest thing in the pantry is
+  /// no longer worth playing. Salty had only the minor Salt Hater before this.
+  'perfectionist': Critic(
+    id: 'perfectionist',
+    name: 'The Perfectionist',
+    rule: 'Dishes must use at least 3 ingredients, and Salty contributes 0 intensity',
+    minCards: 3,
+    debuff: 'salty',
+  ),
 };
 
 /// May [c] be the demand on the service that ends a run?
@@ -669,6 +818,14 @@ class CityDef {
 /// The Minimalist appears only on Kochi. Its 3-card cap holds you to Three of a Kind, which
 /// is why Kochi's boss is 1200 rather than the spec'd 2000 — and why that critic must never
 /// land on a later city, whose targets assume the whole recipe ladder is available.
+///
+/// **A city's critic may only be swapped for one with the same [criticCanCloseARun] verdict.**
+/// [drawRoute] picks the finale from the cities that pass, so changing a verdict changes the
+/// *length* of that candidate list and silently re-rolls the route of every existing seed —
+/// the same seeded-list trap as [kUtensils] and [kBlends], reached by a different road. The
+/// v1.0 pass gave Addis Ababa, Oaxaca, Lima and New Orleans critics of their own (they had
+/// been sharing with Bangkok, Seoul, Beirut and Marrakech) and held that rule, so every route
+/// drawn before it still draws identically. `test/route_test.dart` pins the candidate set.
 const List<CityDef> kCityPool = [
   CityDef(id: 'kochi', name: 'Kochi 🇮🇳', critic: 'minimalist'),
   CityDef(id: 'bangkok', name: 'Bangkok 🇹🇭', critic: 'firebrand'),
@@ -677,11 +834,11 @@ const List<CityDef> kCityPool = [
   CityDef(id: 'istanbul', name: 'Istanbul 🇹🇷', critic: 'brine_baron'),
   CityDef(id: 'beirut', name: 'Beirut 🇱🇧', critic: 'austere'),
   CityDef(id: 'marrakech', name: 'Marrakech 🇲🇦', critic: 'ascetic'),
-  CityDef(id: 'addis_ababa', name: 'Addis Ababa 🇪🇹', critic: 'firebrand'),
+  CityDef(id: 'addis_ababa', name: 'Addis Ababa 🇪🇹', critic: 'connoisseur'),
   CityDef(id: 'naples', name: 'Naples 🇮🇹', critic: 'traditionalist'),
-  CityDef(id: 'oaxaca', name: 'Oaxaca 🇲🇽', critic: 'gourmand'),
-  CityDef(id: 'lima', name: 'Lima 🇵🇪', critic: 'austere'),
-  CityDef(id: 'new_orleans', name: 'New Orleans 🇺🇸', critic: 'ascetic'),
+  CityDef(id: 'oaxaca', name: 'Oaxaca 🇲🇽', critic: 'maximalist'),
+  CityDef(id: 'lima', name: 'Lima 🇵🇪', critic: 'contrarian'),
+  CityDef(id: 'new_orleans', name: 'New Orleans 🇺🇸', critic: 'perfectionist'),
 ];
 
 final Map<String, CityDef> kCityDefById = {for (final c in kCityPool) c.id: c};

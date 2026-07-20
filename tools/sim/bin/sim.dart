@@ -5,6 +5,7 @@
 //   dart run tools/sim --stake 8 -n 2000 --deck royal
 //   dart run tools/sim --compare           # ladder side by side with the JS numbers
 //   dart run tools/sim --floor 0           # bot buys anything (the old, tasteless policy)
+//   dart run tools/sim --pct 40            # a less picky bot, as a percentile of the pool
 //
 // The bot policy is a deliberate port of tools/sim.mjs's greedy bot — same value table,
 // same dig heuristic, same buy order — so the two ladders are comparable. Matching win
@@ -50,6 +51,22 @@ const Map<String, int> _value = {
   'yanagiba': 25, 'kazan': 95, 'maple_evaporator': 88, 'asado_cross': 45,
   // flavour multipliers — the second scaling axis, so rated high
   'copper_degchi': 92, 'clay_tandir': 86, 'stone_mortar': 30, 'harvest_basket': 72,
+  // v1.0 pass — commons
+  'ttukbaegi': 46, 'mezzaluna': 44, 'jebena': 24, 'cezve': 56, 'miso_keg': 40,
+  'berbere_mill': 54, 'otoshibuta': 60,
+  // v1.0 pass — uncommons
+  'gamasot': 64, 'tiella': 50, 'zeer': 58, 'tamarind_press': 56, 'sugarcane_press': 52,
+  'suribachi': 66, 'dashi_kettle': 70, 'mesob': 68, 'kanoun': 66, 'chatti': 62,
+  'souk_stall': 26,
+  // v1.0 pass — rares. The five flavour multipliers rate alongside the heat ones; the
+  // vendor and the secret-recipe lottery ticket rate below the floor on purpose, because a
+  // bot that never uses blends can never open Jubako's gate and would only be buying noise.
+  // Rated against their heat twins rather than freehand, because a flavour multiplier and a
+  // heat multiplier of the same size on the same gate are worth exactly the same: the score
+  // is the product. Sumac Mill mirrors Maple Evaporator (88), Couscoussier shares Emperor's
+  // Wok's gate (75) at a smaller multiplier, Konro Grill is Wok's (70) at a bigger one.
+  'mole_olla': 85, 'pachamanca_stones': 76, 'sumac_mill': 88, 'couscoussier': 70,
+  'uruli': 58, 'konro_grill': 82, 'tiffin_carrier': 34, 'jubako': 15,
 };
 int _uval(String id) => _value[id] ?? 40;
 
@@ -136,15 +153,34 @@ bool _playService(RunState run) {
   return run.score >= run.target;
 }
 
-/// The bot declines offers it rates below this.
+/// How selective the shop bot is, as a percentile of the pool it can actually be offered.
 ///
-/// Not a balance knob — an instrument fix. Without it the bot buys ANY affordable utensil,
-/// which was survivable in a 20-utensil pool where most offers were decent, but in a
-/// 65-utensil pool it burns coins on situational pieces and starves Festival purchases.
-/// Since Festival recipe-leveling is the run's scaling engine, that reads as a balance
-/// collapse when it is really just a bot with no taste. A human declines offers and rerolls;
-/// the bot never rerolls, so a floor is the cheapest way to stop measuring the wrong thing.
-int _valueFloor = 50;
+/// Not a balance knob — an instrument fix, and the second version of one. The bot used to buy
+/// ANY affordable utensil, which starved Festival purchases in a large pool and read as a
+/// balance collapse; a fixed value floor fixed that at 65 utensils. But an ABSOLUTE floor gets
+/// less selective as the pool grows: at 95 utensils the same floor of 50 admits a larger
+/// fraction of the catalog, and the ladder moved 26% -> 21% on content that measurement showed
+/// was balance-neutral.
+///
+/// A percentile holds selectivity constant instead, so a ladder taken before and after a
+/// content drop compares like with like. That is the only property this number needs to have —
+/// the absolute win rate was never meaningful on its own, only its shape across stakes.
+///
+/// `--floor N` still forces an absolute threshold for A/B work; `--pct N` sets this.
+int _valuePercentile = 55;
+
+/// Absolute override; null means derive from [_valuePercentile].
+int? _absoluteFloor;
+
+/// Resolved once per process against the catalog the bot can actually be offered.
+final int _valueFloor = _absoluteFloor ?? _derivedFloor();
+
+int _derivedFloor() {
+  final values = kUtensils.map((u) => _uval(u.id)).toList()..sort();
+  if (values.isEmpty) return 0;
+  final idx = ((values.length - 1) * _valuePercentile / 100).round();
+  return values[idx];
+}
 
 void _shop(RunState run) {
   final offers = rollOffers(run);
@@ -225,7 +261,8 @@ void main(List<String> arguments) {
   final deckId = opt('--deck') ?? 'home';
   final stakeArg = opt('--stake');
   final compare = arguments.contains('--compare');
-  _valueFloor = int.tryParse(opt('--floor') ?? '') ?? _valueFloor;
+  _absoluteFloor = int.tryParse(opt('--floor') ?? '');
+  _valuePercentile = int.tryParse(opt('--pct') ?? '') ?? _valuePercentile;
 
   // Headless profile: unlock the full pool so the bot represents an experienced build,
   // matching what tools/sim.mjs does.
