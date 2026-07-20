@@ -135,9 +135,18 @@ The validator must reject unknown keys. That discipline is what keeps 100+ futur
   `dishError` / `rollOffers` rather than reimplementing scoring, so every number it shows is exactly
   what the game will score. If you touch it, keep that property — a parallel solver that drifts is
   worse than no Coach.
-- **Seeded determinism.** One RNG, seeded, owns every shuffle and shop roll. Same seed → identical
-  run. This underwrites bug reports, the future Daily Route, and golden tests. Never introduce an
-  unseeded `Math.random()`.
+- **Seeded determinism, with entropy only at the boundary.** One seeded RNG (`makeRng`) owns every
+  shuffle and shop roll, so a run is a pure function of (seed, stake, deck, player choices). Same
+  seed → identical run. This underwrites bug reports, seed sharing, the future Daily Route, and the
+  determinism golden test.
+
+  `Math.random()` is legitimate in exactly two places, and **`game-core.mjs` must stay at zero**:
+  `randomSeed()` (`§UI`), which mints the seed *before* the run starts, and particle VFX
+  (~1525–1532), which never touches game state. Anywhere else it breaks reproducibility silently.
+
+  Note that a blank seed field is **not** an unseeded run — it generates a `SPICE-XXXXX` code and
+  seeds normally, so every run stays replayable from the summary screen. The seed alphabet omits
+  `I`/`O`/`0`/`1` because players read seeds off a phone and retype them; keep it that way.
 - **Unlocks are never lost on death.** `loadProfile` merges over `defaultProfile()` so added fields
   survive old saves; "Show step tips again" resets tips but must not touch the profile.
 
