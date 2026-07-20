@@ -328,57 +328,90 @@ class _RouteStrip extends StatelessWidget {
       return Text('THE LONG ROUTE · ${run.endlessCity}  ·  DISTANCE ${run.distance}',
           textAlign: TextAlign.center, style: T.label);
     }
-    return Row(
+    // Reads run.route, not kCities: a run draws 8 cities from a pool of 12, so the journey
+    // is per-run. Naming all eight won't fit a phone, so cities are dots and only the
+    // current one's three services are spelled out — where you are and how far is left
+    // legible, which is the whole job of the strip.
+    final route = run.route;
+    return Column(
       children: [
-        for (var ci = 0; ci < gc.kCities.length; ci++) ...[
-          if (ci > 0)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6),
-              child: Text('›', style: T.bodyDim.copyWith(fontSize: 13)),
-            ),
-          Expanded(
-            child: Column(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: List.generate(3, (si) {
-                    final done = ci < run.cityIndex || (ci == run.cityIndex && si < run.serviceIndex);
-                    final here = ci == run.cityIndex && si == run.serviceIndex;
-                    final boss = si == 2;
-                    return Container(
-                      width: here ? 9 : 6,
-                      height: here ? 9 : 6,
-                      margin: const EdgeInsets.symmetric(horizontal: 2.5),
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: done
-                            ? T.good
-                            : here
-                                ? T.brass
-                                : Colors.transparent,
-                        border: Border.all(
-                          color: done ? T.good : (here ? T.brass : (boss ? T.bad : T.line)),
-                          width: 1.4,
-                        ),
-                      ),
-                    );
-                  }),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            for (var ci = 0; ci < route.length; ci++) ...[
+              if (ci > 0)
+                Container(
+                  width: 10,
+                  height: 1.5,
+                  color: ci <= run.cityIndex ? T.good : T.line,
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  gc.kCities[ci].name.split(' ').first.toUpperCase(),
-                  style: T.label.copyWith(
-                    fontSize: 9.5,
-                    color: ci == run.cityIndex ? T.ink : T.dim.withValues(alpha: 0.55),
-                  ),
+              _CityDot(done: ci < run.cityIndex, current: ci == run.cityIndex),
+            ],
+          ],
+        ),
+        const SizedBox(height: 6),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text('CITY ${run.cityIndex + 1}/${route.length}', style: T.label.copyWith(fontSize: 9.5)),
+            const SizedBox(width: 10),
+            for (var si = 0; si < 3; si++)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2.5),
+                child: _ServicePip(
+                  done: si < run.serviceIndex,
+                  current: si == run.serviceIndex,
+                  boss: si == 2,
                 ),
-              ],
-            ),
-          ),
-        ],
+              ),
+          ],
+        ),
       ],
     );
   }
+}
+
+class _CityDot extends StatelessWidget {
+  const _CityDot({required this.done, required this.current});
+
+  final bool done;
+  final bool current;
+
+  @override
+  Widget build(BuildContext context) => AnimatedContainer(
+    duration: const Duration(milliseconds: 180),
+    width: current ? 11 : 7,
+    height: current ? 11 : 7,
+    decoration: BoxDecoration(
+      shape: BoxShape.circle,
+      color: done ? T.good : (current ? T.brass : Colors.transparent),
+      border: Border.all(color: done ? T.good : (current ? T.brass : T.line), width: 1.4),
+    ),
+  );
+}
+
+class _ServicePip extends StatelessWidget {
+  const _ServicePip({required this.done, required this.current, required this.boss});
+
+  final bool done;
+  final bool current;
+
+  /// The third service is the Food Critic — ringed red so the boss is visible on approach.
+  final bool boss;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: current ? 9 : 6,
+    height: current ? 9 : 6,
+    decoration: BoxDecoration(
+      shape: BoxShape.circle,
+      color: done ? T.good : (current ? T.brass : Colors.transparent),
+      border: Border.all(
+        color: done ? T.good : (current ? T.brass : (boss ? T.bad : T.line)),
+        width: 1.4,
+      ),
+    ),
+  );
 }
 
 class _ScoreBar extends StatelessWidget {

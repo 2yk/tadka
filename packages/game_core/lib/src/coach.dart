@@ -285,7 +285,7 @@ int _jsRound(double n) => (n + 0.5).floor();
 int _estimatedDishesLeft(RunState run) {
   if (run.endless) return 8;
   final done = run.cityIndex * 3 + run.serviceIndex + 1;
-  final est = _jsRound((9 - done) * 2.5);
+  final est = _jsRound((run.route.length * 3 - done) * 2.5);
   return est < 1 ? 1 : est;
 }
 
@@ -350,7 +350,7 @@ List<_Bench> _benchHands(RunState run) {
 /// Clamped past the end of the route: the Coach is an advisor and must never be the thing
 /// that throws on a screen the player can still reach.
 City _bazaarCity(RunState run) =>
-    (run.endless || run.cityIndex <= 2) ? cityOf(run) : kCities[2];
+    (run.endless || run.cityIndex < run.route.length) ? cityOf(run) : run.route.last;
 
 /// The best per-dish delta an offer achieves anywhere on the benchmark panel.
 class _Impact {

@@ -10,6 +10,8 @@
 /// (2000 was mathematically unwinnable under the Minimalist's 3-card cap).
 library;
 
+import 'dart:math' as math;
+
 import 'models.dart';
 
 /// Ingredient display names, indexed by rank-1 within each family.
@@ -153,11 +155,60 @@ const Map<String, String> kGenericNames = {
 
 /// The signature global mechanic: the same pattern is named after a local dish per city.
 /// Pure data, zero mechanical cost, maximum cultural connection (concept doc §2.1).
+///
+/// Every city in [kCityPool] must have all 12 [kPatternOrder] entries — `catalog_test.dart`
+/// asserts it, and [dishName] throws rather than falling back, because a silent fallback to
+/// "three_kind" on a city someone forgot to fill in is exactly the bug that ships.
+///
+/// The names are researched, not improvised: real dishes, correctly spelled, in the escalating
+/// order the recipe ladder implies (a street bite, a shared plate, the iconic main, the
+/// city's signature, the banquet). The last three rows are the secret recipes and follow the
+/// established construction — an English modifier on a local noun ("Royal Sadya", "Pure
+/// Omakase"), and a genuine regal or emblematic title for the apex.
 const Map<String, Map<String, String>> kDishNames = {
   'kochi': {'high_card': 'Street Snack', 'pair': 'Chaat', 'two_pair': 'Meals Combo', 'three_kind': 'Curry', 'straight': 'Sadya', 'flush': 'Signature Thali', 'full_house': 'Feast', 'four_kind': 'Royal Curry', 'straight_flush': 'Royal Biryani', 'five_kind': 'Royal Sadya', 'full_family': 'Purist Thali', 'perfect_palate': 'The Maharaja'},
   'tokyo': {'high_card': 'Bento Bite', 'pair': 'Onigiri', 'two_pair': 'Teishoku', 'three_kind': 'Ramen', 'straight': 'Sushi Set', 'flush': 'Omakase', 'full_house': 'Donburi Feast', 'four_kind': 'Wagyu Course', 'straight_flush': 'Kaiseki', 'five_kind': "Emperor's Kaiseki", 'full_family': 'Pure Omakase', 'perfect_palate': 'The Shogun'},
   'naples': {'high_card': 'Cicchetti', 'pair': 'Bruschetta', 'two_pair': 'Antipasti', 'three_kind': 'Risotto', 'straight': 'Primi e Secondi', 'flush': 'Margherita', 'full_house': 'Festa', 'four_kind': 'Quattro Formaggi', 'straight_flush': "Nonna's Feast", 'five_kind': 'Grand Festa', 'full_family': 'Monovarietale', 'perfect_palate': 'Il Capolavoro'},
+  'bangkok': {'high_card': 'Khanom Krok', 'pair': 'Som Tam', 'two_pair': 'Khao Gaeng', 'three_kind': 'Pad Thai', 'straight': 'Samrap', 'flush': 'Tom Yum Goong', 'full_house': 'Ngan Liang', 'four_kind': 'Massaman', 'straight_flush': 'Khao Chae', 'five_kind': 'Royal Samrap', 'full_family': 'Purist Samrap', 'perfect_palate': 'The Garuda'},
+  'seoul': {'high_card': 'Hotteok', 'pair': 'Gimbap', 'two_pair': 'Banchan Set', 'three_kind': 'Bibimbap', 'straight': 'Hanjeongsik', 'flush': 'Kimchi Jjigae', 'full_house': 'Jeongol', 'four_kind': 'Galbijjim', 'straight_flush': 'Surasang', 'five_kind': 'Royal Hanjeongsik', 'full_family': 'Purist Jeongol', 'perfect_palate': 'The Daewang'},
+  // `flush` is NOT the concept doc's Testi Kebabı: that dish carries a geographical
+  // indication tied to Avanos pottery in Cappadocia, 700km from Istanbul. Hünkâr Beğendi
+  // ("the sultan's delight") comes out of the Ottoman palace kitchens and is the honest
+  // Istanbul answer. Same reason `straight_flush` keeps the doc's Sultan's Table: it is
+  // descriptive English, not mangled Turkish.
+  'istanbul': {'high_card': 'Simit', 'pair': 'Meze', 'two_pair': 'Kahvaltı', 'three_kind': 'Pilav', 'straight': 'Ocakbaşı', 'flush': 'Hünkâr Beğendi', 'full_house': 'Ziyafet', 'four_kind': 'İskender Kebap', 'straight_flush': "Sultan's Table", 'five_kind': 'Grand Ziyafet', 'full_family': 'Purist Meze', 'perfect_palate': 'The Padishah'},
+  'beirut': {'high_card': "Ka'ak", 'pair': "Man'oushe", 'two_pair': 'Mezze', 'three_kind': 'Kibbeh', 'straight': 'Sofra', 'flush': 'Tabbouleh', 'full_house': 'Walimah', 'four_kind': 'Mashawi', 'straight_flush': 'Zaffe Feast', 'five_kind': 'Grand Walimah', 'full_family': 'Purist Mezze', 'perfect_palate': 'The Emir'},
+  // `straight` is the seven-vegetable couscous by its Moroccan name, not the French
+  // brasserie framing "Couscous Royal".
+  'marrakech': {'high_card': 'Msemen', 'pair': 'Briouat', 'two_pair': 'Kemia', 'three_kind': 'Tagine', 'straight': 'Couscous Sebaa Khodra', 'flush': 'Pastilla', 'full_house': 'Diffa', 'four_kind': 'Mechoui', 'straight_flush': 'Moussem Feast', 'five_kind': 'Grand Diffa', 'full_family': 'Purist Tagine', 'perfect_palate': 'The Sultan'},
+  'addis_ababa': {'high_card': 'Dabo Kolo', 'pair': 'Sambusa', 'two_pair': 'Firfir', 'three_kind': 'Doro Wat', 'straight': 'Beyaynetu', 'flush': 'Kitfo', 'full_house': 'Mesob Feast', 'four_kind': 'Zilzil Tibs', 'straight_flush': 'Enkutatash Feast', 'five_kind': 'Grand Mesob', 'full_family': 'Purist Beyaynetu', 'perfect_palate': 'The Negus'},
+  // `straight_flush` is NOT the concept doc's Fiesta Grande — that is Chiapa de Corzo, in
+  // Chiapas. La Mayordomía is the Oaxacan patron-saint feast, which is exactly a
+  // village-scale banquet. `perfect_palate` is La Donají, the Zapotec princess on Oaxaca
+  // City's coat of arms, so the apex is a real emblem like every other city's rather than
+  // the generic Spanish for "the masterpiece".
+  'oaxaca': {'high_card': 'Chapulines', 'pair': 'Elote', 'two_pair': 'Botana Oaxaqueña', 'three_kind': 'Tlayuda', 'straight': 'Comida Corrida', 'flush': 'Mole Negro', 'full_house': 'Guelaguetza', 'four_kind': 'Barbacoa Oaxaqueña', 'straight_flush': 'La Mayordomía', 'five_kind': 'Gran Guelaguetza', 'full_family': 'Mole Puro', 'perfect_palate': 'La Donají'},
+  // `four_kind` is Arroz con Mariscos, not Chupe de Camarones — the chupe is Arequipa's.
+  // Pachamanca is highland rather than Limeño but is pan-Peruvian and is genuinely a
+  // layered, sequenced earth-oven meal, which no coastal dish matches for `straight`.
+  'lima': {'high_card': 'Anticucho', 'pair': 'Causa', 'two_pair': 'Piqueo', 'three_kind': 'Lomo Saltado', 'straight': 'Pachamanca', 'flush': 'Ceviche', 'full_house': 'Banquete Criollo', 'four_kind': 'Arroz con Mariscos', 'straight_flush': 'Menú Novoandino', 'five_kind': 'Gran Pachamanca', 'full_family': 'Ceviche Puro', 'perfect_palate': 'El Sapa Inca'},
+  // `perfect_palate` is the Krewe of Rex's own title. "The Rex" would be redundant — Rex
+  // *is* the King of Carnival.
+  'new_orleans': {'high_card': 'Beignet', 'pair': 'Po-Boy', 'two_pair': 'Muffuletta', 'three_kind': 'Gumbo', 'straight': "Table d'Hôte", 'flush': 'Jambalaya', 'full_house': 'Crawfish Boil', 'four_kind': 'Oysters Rockefeller', 'straight_flush': 'Mardi Gras Feast', 'five_kind': 'Krewe Banquet', 'full_family': 'Purist Gumbo', 'perfect_palate': 'The King of Carnival'},
 };
+
+/// The local name for [pattern] in [cityId].
+///
+/// Throws rather than falling back. A missing entry is a content bug — a city added to
+/// [kCityPool] without its dish table — and the failure mode of a silent fallback is that
+/// the game quietly shows "straight_flush" to a player at the best moment of their run.
+String dishName(String cityId, String pattern) {
+  final name = kDishNames[cityId]?[pattern];
+  if (name == null) {
+    throw StateError('kDishNames is missing "$pattern" for city "$cityId"');
+  }
+  return name;
+}
 
 /// The utensil catalog, expressed purely in the effect DSL.
 ///
@@ -311,28 +362,103 @@ const List<Festival> kFestivals = [
 
 final Map<String, Festival> kFestivalById = {for (final f in kFestivals) f.id: f};
 
-/// City palates (build spec §7).
+/// City palates (build spec §7), one per city in [kCityPool].
+///
+/// Only three *shapes* exist, and they are the three [Palate] understands — per-card
+/// flavour percentage, per-card heat, and a whole-dish bonus for one recipe. Every city
+/// below is one of those three with different numbers. A fourth shape would mean an engine
+/// change in `cardContribution` / `scoreDish`, so a new city is content, not code.
+///
+/// The Kochi, Tokyo and Naples entries are frozen: `test/vectors.json` scores dishes
+/// against them, so a retune there is a differential-test break rather than a balance edit.
 const Map<String, Palate> kPalates = {
+  // --- shape A: a family's intensity pays a flavour percentage on top -------------------
   'kochi': Palate(
     city: 'kochi',
     label: 'Sour ingredients give +50% intensity as flavor',
     perCardFlavorPctFamily: 'sour',
     perCardFlavorPct: 50,
   ),
+  'seoul': Palate(
+    city: 'seoul',
+    label: 'Salty ingredients give +45% intensity as flavor',
+    perCardFlavorPctFamily: 'salty',
+    perCardFlavorPct: 45,
+  ),
+  'oaxaca': Palate(
+    city: 'oaxaca',
+    label: 'Spicy ingredients give +45% intensity as flavor',
+    perCardFlavorPctFamily: 'spicy',
+    perCardFlavorPct: 45,
+  ),
+  'lima': Palate(
+    city: 'lima',
+    label: 'Sour ingredients give +40% intensity as flavor',
+    perCardFlavorPctFamily: 'sour',
+    perCardFlavorPct: 40,
+  ),
+  // --- shape B: a family adds flat heat per card ----------------------------------------
   'tokyo': Palate(
     city: 'tokyo',
     label: 'Umami ingredients give +2 heat each',
     perCardHeatFamily: 'umami',
     perCardHeatAdd: 2,
   ),
+  'bangkok': Palate(
+    city: 'bangkok',
+    label: 'Spicy ingredients give +2 heat each',
+    perCardHeatFamily: 'spicy',
+    perCardHeatAdd: 2,
+  ),
+  'marrakech': Palate(
+    city: 'marrakech',
+    label: 'Sweet ingredients give +2 heat each',
+    perCardHeatFamily: 'sweet',
+    perCardHeatAdd: 2,
+  ),
+  'beirut': Palate(
+    city: 'beirut',
+    label: 'Sour ingredients give +2 heat each',
+    perCardHeatFamily: 'sour',
+    perCardHeatAdd: 2,
+  ),
+  // --- shape C: one recipe gets a whole-dish flavour bonus -------------------------------
   'naples': Palate(
     city: 'naples',
     label: 'Flush dishes get +40 flavor',
     dishFlavorPattern: 'flush',
     dishFlavorAdd: 40,
   ),
+  'istanbul': Palate(
+    city: 'istanbul',
+    label: 'Straight dishes get +40 flavor',
+    dishFlavorPattern: 'straight',
+    dishFlavorAdd: 40,
+  ),
+  'addis_ababa': Palate(
+    city: 'addis_ababa',
+    label: 'Three of a Kind dishes get +35 flavor',
+    dishFlavorPattern: 'three_kind',
+    dishFlavorAdd: 35,
+  ),
+  'new_orleans': Palate(
+    city: 'new_orleans',
+    label: 'Full House dishes get +50 flavor',
+    dishFlavorPattern: 'full_house',
+    dishFlavorAdd: 50,
+  ),
 };
 
+/// The major critics — the Food Critic service that closes every city.
+///
+/// Every entry uses only the four [Critic] demand fields the engine already reads
+/// (`maxCards`, `minCards`, `debuff`, `requireFamily`), so the pool grows without
+/// `dishError` or `cardContribution` moving. The concept doc's Rival Chef ("beat the target
+/// within 3 dishes") is deliberately absent — it would need a fifth field and an engine
+/// change; see the report in the commit message.
+///
+/// `minimalist` and `traditionalist` are the ported pair and are frozen — `test/vectors.json`
+/// scores debuffed dishes against them.
 const Map<String, Critic> kCritics = {
   'minimalist': Critic(
     id: 'minimalist',
@@ -346,7 +472,53 @@ const Map<String, Critic> kCritics = {
     rule: 'Sweet ingredients contribute 0 intensity (and no palate bonus)',
     debuff: 'sweet',
   ),
+  'gourmand': Critic(
+    id: 'gourmand',
+    name: 'The Gourmand',
+    rule: 'Dishes must use at least 4 ingredients',
+    minCards: 4,
+  ),
+  'austere': Critic(
+    id: 'austere',
+    name: 'The Austere Critic',
+    rule: 'Umami ingredients contribute 0 intensity (and no palate bonus)',
+    debuff: 'umami',
+  ),
+  'ascetic': Critic(
+    id: 'ascetic',
+    name: 'The Ascetic',
+    rule: 'Spicy ingredients contribute 0 intensity (and no palate bonus)',
+    debuff: 'spicy',
+  ),
+  'firebrand': Critic(
+    id: 'firebrand',
+    name: 'The Firebrand',
+    rule: 'Every dish must contain a Spicy ingredient',
+    requireFamily: 'spicy',
+  ),
+  'brine_baron': Critic(
+    id: 'brine_baron',
+    name: 'The Brine Baron',
+    rule: 'Every dish must contain a Salty ingredient',
+    requireFamily: 'salty',
+  ),
 };
+
+/// May [c] be the demand on the service that ends a run?
+///
+/// This generalizes a hard-won balance fix. Naples' finale critic was pinned to the
+/// Traditionalist because rolling the Minimalist onto a 50k target was unwinnable at any
+/// Kitchen level — and the reason is structural rather than about those two critics:
+///
+///  * `maxCards` below 5 caps the recipe ladder at Three of a Kind. Kitchen level grows the
+///    base linearly, so a capped ladder cannot catch a target that grows geometrically.
+///  * `requireFamily` forces a card of one family into every dish, which makes a Flush or a
+///    Straight Flush impossible unless the build happens to be in that family — the same
+///    ceiling by a different route.
+///
+/// Debuffs and minimums only make the finale expensive, never impossible, so they are safe.
+/// [drawRoute] draws the last city of a route from the cities whose critic passes this.
+bool criticCanCloseARun(Critic c) => c.maxCards == null && c.requireFamily == null;
 
 /// A city on the route.
 ///
@@ -376,8 +548,15 @@ class City {
   final Critic? criticObj;
 }
 
-/// The 3-city M0 mini-run. Naples' finale critic is fixed to the Traditionalist on purpose:
-/// rolling the Minimalist on a 50k target is unwinnable at any Kitchen level.
+/// **The frozen 3-city route of the JS build.** This is no longer what a run walks — see
+/// [kCityPool] and `drawRoute` — but it is still the exact route `web/game-core.mjs` knows,
+/// and `test/runs_test.dart` pins its traces to it by passing `route: kCities` to `newRun`.
+/// Treat it as a fixture, not as content: retuning a number here is a differential-test
+/// break, not a balance edit.
+///
+/// Naples' finale critic is fixed to the Traditionalist on purpose: rolling the Minimalist
+/// on a 50k target is unwinnable at any Kitchen level. [criticCanCloseARun] is that rule
+/// generalized to the 12-city pool.
 const List<City> kCities = [
   City(id: 'kochi', name: 'Kochi 🇮🇳', targets: [300, 800, 1200], critic: 'minimalist'),
   City(id: 'tokyo', name: 'Tokyo 🇯🇵', targets: [3500, 6000, 11000], critic: 'traditionalist'),
@@ -385,3 +564,145 @@ const List<City> kCities = [
 ];
 
 const List<String> kServiceNames = ['Lunch Rush', 'Dinner Rush', 'The Food Critic'];
+
+// ---------------------------------------------------------------------------
+// The route: 8 cities drawn from a pool of 12 (concept doc §3.1)
+// ---------------------------------------------------------------------------
+
+/// A city as it sits in the pool, before a route places it.
+///
+/// It deliberately carries no targets. A city's *difficulty* is a property of where it falls
+/// on the route — Naples is brutal because it is last, not because it is Naples — so targets
+/// come from [routeTargets] and the identity here is only culture: name, palate, critic.
+class CityDef {
+  const CityDef({required this.id, required this.name, required this.critic});
+
+  /// Key into [kPalates] and [kDishNames]; both must have an entry for it.
+  final String id;
+  final String name;
+
+  /// Key into [kCritics] for this city's Food Critic service.
+  final String critic;
+}
+
+/// The 12 world food capitals a run draws from (concept doc §4: 12 in pool, 8 per run).
+///
+/// **Order is a seed contract.** [drawRoute] shuffles this list, so inserting or reordering
+/// an entry silently re-rolls the route of every existing seed. Append; do not insert.
+///
+/// The critic is fixed per city rather than rolled, which is what makes a city a legible
+/// unit the player can plan against: the concept doc's §3.5 promise is that palates are
+/// visible one city ahead, and a known palate paired with a known demand is what turns that
+/// into a real decision. It also costs zero RNG draws.
+///
+/// The Minimalist appears only on Kochi. Its 3-card cap holds you to Three of a Kind, which
+/// is why Kochi's boss is 1200 rather than the spec'd 2000 — and why that critic must never
+/// land on a later city, whose targets assume the whole recipe ladder is available.
+const List<CityDef> kCityPool = [
+  CityDef(id: 'kochi', name: 'Kochi 🇮🇳', critic: 'minimalist'),
+  CityDef(id: 'bangkok', name: 'Bangkok 🇹🇭', critic: 'firebrand'),
+  CityDef(id: 'seoul', name: 'Seoul 🇰🇷', critic: 'gourmand'),
+  CityDef(id: 'tokyo', name: 'Tokyo 🇯🇵', critic: 'traditionalist'),
+  CityDef(id: 'istanbul', name: 'Istanbul 🇹🇷', critic: 'brine_baron'),
+  CityDef(id: 'beirut', name: 'Beirut 🇱🇧', critic: 'austere'),
+  CityDef(id: 'marrakech', name: 'Marrakech 🇲🇦', critic: 'ascetic'),
+  CityDef(id: 'addis_ababa', name: 'Addis Ababa 🇪🇹', critic: 'firebrand'),
+  CityDef(id: 'naples', name: 'Naples 🇮🇹', critic: 'traditionalist'),
+  CityDef(id: 'oaxaca', name: 'Oaxaca 🇲🇽', critic: 'gourmand'),
+  CityDef(id: 'lima', name: 'Lima 🇵🇪', critic: 'austere'),
+  CityDef(id: 'new_orleans', name: 'New Orleans 🇺🇸', critic: 'ascetic'),
+];
+
+final Map<String, CityDef> kCityDefById = {for (final c in kCityPool) c.id: c};
+
+/// How many cities one run visits.
+const int kRouteLength = 8;
+
+/// The city every run opens on: the home culture, and the tutorial.
+const String kStartCityId = 'kochi';
+
+// --- the target curve ------------------------------------------------------
+//
+// TUNING KNOBS. Everything below is data: change a number, rerun
+// `cd tools/sim && dart run bin/sim.dart -n 300`. No logic moves.
+//
+// The curve is quadratic in *service* number, and that is derived rather than fitted.
+// Festival recipe-leveling is the run's scaling engine, and it is linear twice over:
+// [kLevelBonus] grows a recipe's base flavour AND its base heat by a fixed amount per
+// Kitchen level, and Kitchen level grows about linearly in bazaars, so a dish worth
+// (F0 + aL) x (H0 + bL) is quadratic in level and therefore quadratic in how far along the
+// route you are. Targets that track the scaling engine are targets that stay the same
+// difficulty at every slot.
+//
+// This is where an 8-city route parts company with the tuned 3-city one, and it is worth
+// being explicit about why, because the 3-city numbers look like they should just extend.
+// They are geometric — roughly x1.9 per service, 300 to 50000 across nine — and that rate
+// is an artefact of having only nine services to cover the distance in. Player power is
+// only that steep during the opening ramp, when the rack goes from empty to three utensils
+// and Kitchen level 1 to 3. After that it is quadratic. Extending the geometric rate to
+// twenty-four services asks for ~1.3M on the last boss against a measured ceiling near
+// 250k: simulated at 300 runs it wins 0% at every stake, including Paprika.
+//
+// So the curve keeps Kochi verbatim, lands city 2 close to the tuned Tokyo (4800/6800/9300
+// against 3500/6000/11000), and from there climbs at the rate the engine actually scales
+// at. Naples' old 18000/30000/50000 is deliberately NOT reproduced at slot 2: those were
+// the numbers for the end of a three-city sprint, and here slot 2 is a third of the way in.
+//
+// Two properties fall out of the shape for free, rather than needing their own knobs:
+//   * The whole 24-service sequence is monotone increasing, because it is a power of an
+//     increasing argument. There is no city boundary to police.
+//   * The Lunch/Dinner/Critic spread inside a city narrows as the route goes on — x4.0 at
+//     Kochi, x1.2 by the last city. That is correct: early on a bazaar can double your
+//     build, so the boss can afford to be four times the Lunch; by slot 7 a bazaar moves
+//     you a few percent, so a boss four times the Lunch would be unclearable.
+
+/// Kochi's hand-tuned opening triple, kept verbatim as slot 0.
+///
+/// The 1200 boss is load-bearing: the Minimalist's 3-card cap makes an all-flavour build
+/// mathematically capped around 1572, so the spec's 2000 was unwinnable. The general curve
+/// would put slot 0 at 760/1100/1500 — the tutorial city is the one place where the ramp
+/// from an empty rack is too violent for a smooth curve to describe, which is exactly why
+/// it was hand-tuned in the first place.
+const List<int> kTutorialTargets = [300, 800, 1200];
+
+/// `target(s) = kRouteScale * (s + kRouteOffset) ^ kRouteExponent`, for service number `s`.
+///
+/// [kRouteExponent] is 2 because the scaling engine is quadratic (see above) — treat it as
+/// structure, not as a knob, and reach for [kRouteScale] first. [kRouteScale] sets the
+/// absolute difficulty of the whole route and is the one number to move after a sim run.
+/// [kRouteOffset] shifts where on the curve the route starts, which trades the harshness of
+/// the early cities against the late ones.
+const double kRouteScale = 210;
+const double kRouteOffset = 2;
+const double kRouteExponent = 2;
+
+/// JS `Math.round` — `floor(x + 0.5)`, kept identical so a retune cannot drift by one.
+int _jsRound(double n) => (n + 0.5).floor();
+
+/// Rounds a raw curve value to two significant figures, which is what makes the targets
+/// read like designed numbers (23000, not 22990) instead of like the output of a formula.
+int niceTarget(double v) {
+  if (v <= 0) return 0;
+  var mag = 1;
+  while (v / mag >= 100) {
+    mag *= 10;
+  }
+  return _jsRound(v / mag) * mag;
+}
+
+/// The target for service [s], counted from 0 across the whole route (city * 3 + service).
+int serviceTarget(int s) =>
+    niceTarget(kRouteScale * math.pow(s + kRouteOffset, kRouteExponent));
+
+/// Lunch / Dinner / Food Critic targets for route slot [slot] (0-based).
+///
+/// Position, not identity: the same city is a different fight at slot 1 and slot 7.
+List<int> routeTargets(int slot) {
+  if (slot == 0) return kTutorialTargets;
+  final s = slot * 3;
+  return [serviceTarget(s), serviceTarget(s + 1), serviceTarget(s + 2)];
+}
+
+/// Places [def] at route slot [slot], giving it that slot's targets.
+City cityAt(CityDef def, int slot) =>
+    City(id: def.id, name: def.name, targets: routeTargets(slot), critic: def.critic);

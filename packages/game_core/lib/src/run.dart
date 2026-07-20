@@ -123,6 +123,8 @@ class RunState {
   RunState._({
     required this.seed,
     required this.rng,
+    required this.route,
+    required this.minorCritics,
     required this.naplesCritic,
     required this.stake,
     required this.deckId,
@@ -140,8 +142,20 @@ class RunState {
   /// The one seeded source for the entire run. See the library doc.
   final Rng rng;
 
+  /// The cities this run visits, in order, each already carrying its slot's targets.
+  ///
+  /// Fixed for the whole run: [drawRoute] settles it before the first card is dealt, so the
+  /// UI can show the road ahead and the player can plan around a palate two cities out.
+  final List<City> route;
+
+  /// The Dinner Rush minor-critic pool. [kMinorCritics] in play; the differential traces
+  /// pass [kPortedMinorCritics] so a recorded seed rolls the critic it was recorded with.
+  final List<Critic> minorCritics;
+
   /// Pre-rolled at run start so a `critic: 'random'` city resolves the same way whenever it
-  /// is reached. Unused by the shipped 3-city route, which fixes Naples to the Traditionalist.
+  /// is reached. No city in [kCityPool] uses `'random'` — each declares its critic — so this
+  /// only survives because it is the run's very first RNG draw and removing it would re-roll
+  /// every seed in existence, including the recorded traces.
   final String naplesCritic;
   final int stake;
   final String deckId;
@@ -153,7 +167,8 @@ class RunState {
   final int swapsBase;
   final int utensilSlots;
 
-  /// Naples' finale target after stake scaling — the base the Long Route grows from.
+  /// The route's last Food Critic target after stake scaling — the base the Long Route
+  /// grows from.
   final int finalBaseTarget;
 
   int cityIndex = 0;
@@ -199,28 +214,74 @@ class RunState {
   int svcSwapsUsed = 0;
 }
 
+/// Draws a run's route: [kRouteLength] cities from [kCityPool], for [seed].
+///
+/// [kStartCityId] always opens — it is the home culture and the tutorial, and its targets
+/// are hand-tuned against the Minimalist's 3-card cap. The last slot is drawn only from
+/// cities whose critic passes [criticCanCloseARun], which is the Naples/Traditionalist fix
+/// generalized: whatever ends a run must not be able to cap the recipe ladder. The middle
+/// six are a plain shuffle, so no city repeats.
+///
+/// **The draw runs on its own RNG, derived from the seed, and never touches the run's.**
+/// That is deliberate and load-bearing. `newRun`'s draw order — Naples coin-flip, Royal
+/// Rare, first shuffle, Dinner minor critic — stays byte-identical to the JS build's, so
+/// every seed recorded in `test/vectors.json` still shuffles and shops exactly as it did,
+/// and no existing seed's opening changes just because the route got longer. Determinism is
+/// untouched: the route is still a pure function of the seed.
+List<City> drawRoute(String seed) {
+  final rng = Rng('route:$seed');
+  final start = kCityDefById[kStartCityId]!;
+  final rest = kCityPool.where((c) => c.id != kStartCityId).toList();
+  final finale = rng.pick(
+    rest.where((c) => criticCanCloseARun(kCritics[c.critic]!)).toList(),
+  );
+  final middle = rng
+      .shuffle(rest.where((c) => c.id != finale.id).toList())
+      .take(kRouteLength - 2);
+  final defs = [start, ...middle, finale];
+  return [for (var i = 0; i < defs.length; i++) cityAt(defs[i], i)];
+}
+
 /// Starts a run and deals the first service.
 ///
 /// RNG draw order — changing it re-rolls every existing seed:
 /// 1. the Naples critic coin-flip, 2. the Royal deck's free Rare (that deck only),
 /// 3. the first service's shuffle, 4. the Dinner minor critic at Habanero+.
-RunState newRun({required String seed, int stake = 1, String deckId = 'home'}) {
+/// The route is drawn off a *separate* seeded RNG and so does not appear in that list;
+/// see [drawRoute].
+///
+/// [route] and [minorCritics] exist so a caller can pin the content world the run machine
+/// walks. Live play leaves both null. `test/runs_test.dart` passes [kCities] and
+/// [kPortedMinorCritics] — the exact route and critic pool `web/game-core.mjs` knows — so
+/// its recorded traces keep proving that this state machine reproduces the JS one step for
+/// step, on the world that engine can actually have an opinion about. Same reason
+/// `activeUtensilCatalog` exists: scope the fixture, don't freeze the game.
+RunState newRun({
+  required String seed,
+  int stake = 1,
+  String deckId = 'home',
+  List<City>? route,
+  List<Critic>? minorCritics,
+}) {
   final clamped = stake < 1 ? 1 : (stake > 8 ? 8 : stake);
   final deckCfg = kDeckById[deckId] ?? kDeckById['home']!;
   final rng = Rng(seed);
   final naplesCritic = rng.next() < 0.5 ? 'minimalist' : 'traditionalist';
   final sc = stakeConfig(clamped);
   final deckSlots = deckCfg.utensilSlots ?? 5;
+  final theRoute = route ?? drawRoute(seed);
 
-  var finalBaseTarget = kCities[2].targets[2];
+  var finalBaseTarget = theRoute.last.targets[2];
   final ts = sc.targetScale;
-  if (ts != null && 3 >= ts.fromCity) {
+  if (ts != null && theRoute.length >= ts.fromCity) {
     finalBaseTarget = _jsRound(finalBaseTarget * (1 + ts.pct / 100));
   }
 
   final run = RunState._(
     seed: seed,
     rng: rng,
+    route: theRoute,
+    minorCritics: minorCritics ?? kMinorCritics,
     naplesCritic: naplesCritic,
     stake: clamped,
     deckId: deckId,
@@ -251,8 +312,8 @@ RunState newRun({required String seed, int stake = 1, String deckId = 'home'}) {
   return run;
 }
 
-/// The city being played. On the Long Route this is the generated city, not a [kCities] entry.
-City cityOf(RunState run) => run.endless ? run.endlessCityObj! : kCities[run.cityIndex];
+/// The city being played. On the Long Route this is the generated city, not a route entry.
+City cityOf(RunState run) => run.endless ? run.endlessCityObj! : run.route[run.cityIndex];
 
 /// The critic for the current service, or null when there is none.
 ///
@@ -266,7 +327,7 @@ Critic? activeCritic(RunState run) {
     if (id == 'random') id = run.naplesCritic;
     return kCritics[id];
   }
-  if (run.serviceIndex == 1 && run.sc.minorCriticOnDinner) return run.rng.pick(kMinorCritics);
+  if (run.serviceIndex == 1 && run.sc.minorCriticOnDinner) return run.rng.pick(run.minorCritics);
   return null;
 }
 
@@ -326,16 +387,20 @@ void startEndlessCity(RunState run, int k) {
   run.endlessCity = k;
   final g = 2.0 + 0.25 * (k - 1);
   run.endlessBase = (k == 1 ? run.finalBaseTarget.toDouble() : run.endlessBase) * g;
-  final cid = run.rng.pick(const ['kochi', 'tokyo', 'naples']);
+  // The Long Route reprises the cities this run travelled, for their palates. Drawing from
+  // `run.route` rather than a literal list is a no-op on the pinned 3-city route — the ids
+  // are the same three in the same order, so `pick` lands on the same index — which is what
+  // lets the endless traces keep holding while live play gets all 12 palates.
+  final cid = run.rng.pick(run.route).id;
   final majors = [kCritics['minimalist']!, kCritics['traditionalist']!];
   final Critic critic;
   if (k % 3 == 0) {
     // Argument order is an RNG draw order — major first, then minor.
     final major = run.rng.pick(majors);
-    final minor = run.rng.pick(kMinorCritics);
+    final minor = run.rng.pick(run.minorCritics);
     critic = mergeCritics(major, minor);
   } else {
-    critic = run.rng.pick([...majors, ...kMinorCritics]);
+    critic = run.rng.pick([...majors, ...run.minorCritics]);
   }
   run.endlessCityObj = City(
     id: cid,
@@ -526,15 +591,17 @@ void advance(RunState run) {
     run.serviceIndex = 0;
     run.cityIndex++;
   }
-  if (run.cityIndex > 2) {
+  if (run.cityIndex >= run.route.length) {
     run.status = 'won';
     return;
   }
   startService(run);
 }
 
-/// True on Naples' Food Critic — clearing it wins the run rather than opening a bazaar.
-bool isFinalService(RunState run) => !run.endless && run.cityIndex == 2 && run.serviceIndex == 2;
+/// True on the last city's Food Critic — clearing it wins the run rather than opening a
+/// bazaar.
+bool isFinalService(RunState run) =>
+    !run.endless && run.cityIndex == run.route.length - 1 && run.serviceIndex == 2;
 
 /// Rolls three bazaar offers: ~28% festival, ~18% blend, else a utensil by rarity weight.
 ///

@@ -154,12 +154,26 @@ StakeConfig stakeConfig(int stakeId) {
   return cfg;
 }
 
-/// The milder Dinner Rush pool, switched on by Habanero (stake 6) and up.
-const List<Critic> kMinorCritics = [
+/// The four minor critics the JS build knows.
+///
+/// **Frozen.** `Rng.pick` indexes by list length, so appending to the pool the run machine
+/// draws from changes *which* critic an existing seed rolls. `test/runs_test.dart` therefore
+/// passes this list to `newRun`, and the Habanero+ Dinner roll and the Long Route's merged
+/// critics land on exactly what the recorded trace saw. Live play uses [kMinorCritics].
+const List<Critic> kPortedMinorCritics = [
   Critic(id: 'sweet_tooth', name: 'The Sweet Tooth', rule: 'Every dish must contain a Sweet ingredient', requireFamily: 'sweet', minor: true),
   Critic(id: 'sour_skeptic', name: 'The Sour Skeptic', rule: 'Sour ingredients are debuffed (0 intensity)', debuff: 'sour', minor: true),
   Critic(id: 'small_plates', name: 'Small Plates', rule: 'Dishes may use at most 4 ingredients', maxCards: 4, minor: true),
   Critic(id: 'salt_hater', name: 'The Salt Hater', rule: 'Salty ingredients are debuffed', debuff: 'salty', minor: true),
+];
+
+/// The milder Dinner Rush pool, switched on by Habanero (stake 6) and up.
+///
+/// Minor critics inconvenience a build; they must never cap it, because they land on a
+/// Dinner Rush the run cannot skip. Append here, not to [kPortedMinorCritics].
+const List<Critic> kMinorCritics = [
+  ...kPortedMinorCritics,
+  Critic(id: 'hearty_portions', name: 'Hearty Portions', rule: 'Dishes must use at least 2 ingredients', minCards: 2, minor: true),
 ];
 
 /// Utensils available from the very first run. Note there are no Rares here — a fresh

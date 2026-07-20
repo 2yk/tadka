@@ -214,7 +214,7 @@ List<Map<String, Object?>> _playRun(Map<String, dynamic> combo) {
   profile = defaultProfile();
   drainUnlockQueue();
   final steps = <Map<String, Object?>>[];
-  final run = newRun(
+  final run = _pinnedRun(
     seed: combo['seed'] as String,
     stake: combo['stake'] as int,
     deckId: combo['deckId'] as String,
@@ -356,6 +356,28 @@ const _portedUtensilIds = {
   'grandmother_ladle', 'golden_sieve', 'emperors_wok',
 };
 
+/// Starts a run in the JS engine's world.
+///
+/// The live game now walks 8 cities drawn from a pool of 12 and rolls Dinner critics from a
+/// wider minor pool. `web/game-core.mjs` knows neither, and never will — so, exactly as with
+/// [activeUtensilCatalog], the fixture pins the content and keeps testing the thing it can
+/// actually test: that this state machine reproduces that one, action for action, on the
+/// route both engines agree on.
+///
+/// What is *not* pinned is the machine itself. `newRun`, `startService`, `activeCritic`,
+/// `advance`, `isFinalService` and the economy all run their real 8-city-capable code here;
+/// only the city list and the critic pool are held to the recorded world. The route was
+/// deliberately made a `newRun` argument rather than a mutable global so this pinning is
+/// per-run and cannot leak between tests.
+RunState _pinnedRun({required String seed, required int stake, required String deckId}) =>
+    newRun(
+      seed: seed,
+      stake: stake,
+      deckId: deckId,
+      route: kCities,
+      minorCritics: kPortedMinorCritics,
+    );
+
 void main() {
   setUpAll(() {
     activeUtensilCatalog =
@@ -434,7 +456,7 @@ void main() {
     for (final c in cases) {
       profile = defaultProfile();
       drainUnlockQueue();
-      final run = newRun(
+      final run = _pinnedRun(
         seed: c['seed'] as String,
         stake: c['stake'] as int,
         deckId: c['deckId'] as String,
@@ -471,7 +493,7 @@ void main() {
     for (final c in (v['runsWon'] as List<dynamic>).cast<Map<String, dynamic>>()) {
       profile = defaultProfile();
       drainUnlockQueue();
-      final run = newRun(
+      final run = _pinnedRun(
         seed: c['seed'] as String,
         stake: c['stake'] as int,
         deckId: c['deckId'] as String,
@@ -497,7 +519,7 @@ void main() {
       drainUnlockQueue();
       final stake = c['stake'] as int;
       final coins = c['coins'] as int;
-      final run = newRun(seed: 'BANK-$stake-$coins', stake: stake, deckId: 'home');
+      final run = _pinnedRun(seed: 'BANK-$stake-$coins', stake: stake, deckId: 'home');
       if (c['endless'] as bool) startEndlessCity(run, 1);
       drainUnlockQueue();
       run.serviceIndex = c['serviceIndex'] as int;
@@ -532,7 +554,7 @@ void main() {
     profile = defaultProfile();
     drainUnlockQueue();
     for (final row in (v['leaderboard'] as List<dynamic>).cast<Map<String, dynamic>>()) {
-      final run = newRun(seed: row['seed'] as String, stake: 2, deckId: 'home');
+      final run = _pinnedRun(seed: row['seed'] as String, stake: 2, deckId: 'home');
       run.distance = row['d'] as int;
       run.totalScore = row['s'] as int;
       recordEndless(run);

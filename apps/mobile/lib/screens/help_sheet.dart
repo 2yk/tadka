@@ -47,11 +47,13 @@ class HelpSheet extends StatelessWidget {
               children: [
                 _Lead(),
                 const SizedBox(height: 16),
-                const _Section(
+                _Section(
                   title: 'THE GOAL',
                   body: 'Each service has a target score. Reach it before you run out of cooks '
-                      'and you travel on. Clear all three services in a city to move to the next. '
-                      'Kochi → Tokyo → Naples wins the run.',
+                      'and you travel on. Clear all three services in a city to move to the next, '
+                      'and clear the whole route to win. Every run visits '
+                      '${gc.kRouteLength} cities drawn from ${gc.kCityPool.length}, starting in '
+                      'Kochi — so no two journeys are the same.',
                 ),
                 const _Section(
                   title: 'COOKING',

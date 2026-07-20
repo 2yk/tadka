@@ -205,6 +205,14 @@ int _winRate(int stake, int n, String deckId) {
 
 /// The JS ladder at 200 runs on the home deck (`node tools/sim.mjs -n 200`), recorded so
 /// the Dart ladder can be compared without needing Node installed.
+///
+/// **No longer a like-for-like reference.** It was recorded on the 3-city route; the Dart
+/// game now plays 8 cities drawn from a pool of 12, on a target curve derived for that
+/// length. The two ladders are still both "how often the greedy bot beats a full run", so
+/// the shape is comparable — a monotone ladder with stake 1 in the 15-30% band and stake 8
+/// near zero — but a per-stake difference is now a difference in route, not in port
+/// fidelity. That job moved to `packages/game_core/test/runs_test.dart`, which replays the
+/// JS traces on the 3-city route directly and step by step.
 const Map<int, int> _jsLadder200 = {1: 26, 2: 3, 3: 0, 4: 0, 5: 0, 6: 1, 7: 0, 8: 0};
 
 void main(List<String> arguments) {
@@ -232,7 +240,8 @@ void main(List<String> arguments) {
 
   stdout.writeln('Stake ladder · deck $deckId · $n runs each:');
   if (compare && deckId == 'home') {
-    stdout.writeln('  (dart vs js@200 — the JS ladder is the reference)');
+    stdout.writeln('  (dart 8-city vs js@200 3-city — compare the SHAPE, not the numbers;');
+    stdout.writeln('   port fidelity now lives in game_core/test/runs_test.dart)');
   }
   for (var s = 1; s <= 8; s++) {
     final wr = _winRate(s, n, deckId);
