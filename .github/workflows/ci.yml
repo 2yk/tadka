@@ -1,0 +1,68 @@
+name: CI
+
+# The repo has a large, deliberately adversarial safety net — JS differential vectors, whole-run
+# trace replay, mutation-tested suites, a DSL allow-list that rejects typo'd keys. None of it
+# protects anything unless it runs on every change, which is what this is for.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: analyze · test · build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Flutter, not setup-dart, even for the pure-Dart packages: this is a pubspec workspace
+      # whose members include a Flutter app, so `pub get` cannot resolve without the Flutter
+      # SDK present. Flutter ships Dart, so one toolchain covers every package here.
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Resolve workspace
+        run: flutter pub get
+
+      # The one invariant CLAUDE.md calls out: web/game-core.mjs is a byte-for-byte extract of
+      # tadka.html. It is the reference the Dart port is tested against, so silent drift there
+      # would quietly invalidate every differential vector.
+      - name: Web engine is in sync with its source
+        run: node tools/extract-core.mjs --check
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: game_core tests
+        working-directory: packages/game_core
+        run: flutter test
+
+      - name: Widget tests
+        working-directory: apps/mobile
+        run: flutter test
+
+      # The balance simulator is the structural advantage over hand-tuning — it is how a
+      # degenerate combo gets caught before a player finds it. Short on purpose: the point is
+      # that a full 24-service route still runs end to end without crashing, not the win rate,
+      # which moves legitimately whenever content lands.
+      - name: Simulator smoke test
+        working-directory: tools/sim
+        run: dart run bin/sim.dart --stake 1 -n 40
+
+      # Catches the class of breakage unit tests miss: a plugin that fails to resolve, a
+      # manifest that won't merge. Android only — iOS needs macOS and code signing, so device
+      # builds stay a local step.
+      - name: Android release build
+        working-directory: apps/mobile
+        run: flutter build apk --release
