@@ -618,7 +618,7 @@ List<Offer> rollOffers(RunState run) {
       final f = run.rng.pick(kFestivals);
       offers.add(Offer(kind: 'festival', id: f.id, name: f.name, cost: f.cost + infl, pattern: f.pattern, rarity: 'festival'));
     } else if (roll < 0.46) {
-      final b = run.rng.pick(kBlends);
+      final b = run.rng.pick(activeBlendCatalog);
       offers.add(Offer(kind: 'blend', id: b.id, name: b.name, cost: b.cost + infl, desc: b.desc, rarity: 'blend'));
     } else {
       final rar = run.rng.weighted(kRarityWeights);

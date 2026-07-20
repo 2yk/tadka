@@ -128,11 +128,46 @@ void main() {
     expect(c.run!.hand[idx].display, startsWith('Chili '));
   });
 
+  _sourcedBlendTests();
+
   testWidgets('no blends means no rack — the row costs nothing when empty', (tester) async {
     final c = GameController()..startRun('NO-BLENDS');
     c.run!.blends.clear();
     await _pumpPhone(tester, _wrap(c));
     expect(find.text('tap to use'), findsNothing);
     expect(find.text('Sun-Dry'), findsNothing);
+  });
+}
+
+/// Source-based blends read the FIRST selected card and edit the rest to match it. Getting
+/// that order backwards burns the blend, so the chip has to say which tap is which.
+void _sourcedBlendTests() {
+  testWidgets('a source-based blend says which tap is the source', (tester) async {
+    final c = _controllerWithBlend('julienne');
+    await _pumpPhone(tester, _wrap(c));
+    expect(find.text('Julienne'), findsOneWidget);
+    expect(find.textContaining('1st is source'), findsWidgets);
+  });
+
+  testWidgets('a plain multi-target blend does not claim a source', (tester) async {
+    final c = _controllerWithBlend('chili_oil');
+    await _pumpPhone(tester, _wrap(c));
+    expect(find.text('Chili Oil'), findsOneWidget);
+    expect(find.textContaining('1st is source'), findsNothing);
+  });
+
+  testWidgets('a two-card verb on one card is refused, not silently spent', (tester) async {
+    final c = _controllerWithBlend('julienne');
+    await _pumpPhone(tester, _wrap(c));
+    final before = c.run!.blends.length;
+
+    c.toggleCard(0);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Julienne'));
+    await tester.pumpAndSettle();
+
+    expect(c.run!.blends.length, before,
+        reason: 'burning a blend for no effect is the worst failure this system has');
+    expect(find.textContaining('source'), findsWidgets);
   });
 }

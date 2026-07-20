@@ -337,14 +337,85 @@ final Map<String, Utensil> kUtensilById = {for (final u in kUtensils) u.id: u};
 
 const List<(String, num)> kRarityWeights = [('common', 60), ('uncommon', 30), ('rare', 10)];
 
-/// The 6 spice blends (consumables). A run holds at most 3.
+/// The 20 spice blends (consumables). A run holds at most 3.
+///
+/// Every entry is pure data: `applyBlend` interprets [Blend.effect] rather than switching on
+/// the id, so a blend is content the same way a utensil is. The key set and its exact
+/// semantics live in `blends.dart`; `test/blends_test.dart` owns the allow-list.
+///
+/// **The first six are the ported M0 set and are frozen.** `test/vectors.json` replays 29
+/// cases recorded from the web build's `useBlend` against them — the display prefixes, the
+/// `_copy` id scheme and the clamp at 10 included — so editing one is a differential break
+/// rather than a retune. They are also the head of the list because `rollOffers` picks by
+/// index off the seeded RNG; append, never insert.
+///
+/// Blends stay inside one boundary, and it is what keeps twenty of them comprehensible:
+/// **a blend edits cards in the hand and the deck, and nothing else.** No scoring, no coins,
+/// no utensil interaction — those are the utensil DSL's job. The verbs are what vary.
 const List<Blend> kBlends = [
-  Blend(id: 'chili_oil', name: 'Chili Oil', cost: 3, select: 2, desc: 'Turn up to 2 selected ingredients Spicy 🌶️'),
-  Blend(id: 'sea_salt', name: 'Sea Salt', cost: 3, select: 2, desc: 'Turn up to 2 selected ingredients Salty 🧂'),
-  Blend(id: 'fermentation', name: 'Fermentation', cost: 3, select: 1, desc: '+3 intensity to 1 selected ingredient'),
-  Blend(id: 'sun_dry', name: 'Sun-Dry', cost: 3, select: 1, desc: 'Duplicate 1 selected ingredient into your hand'),
-  Blend(id: 'sharpen', name: 'Whetstone', cost: 4, select: 1, desc: 'Set 1 selected ingredient to intensity 10'),
-  Blend(id: 'mise', name: 'Mise en Place', cost: 3, select: 0, desc: 'Draw 2 extra ingredients this turn'),
+  // --- the ported six ---------------------------------------------------------------------
+  Blend(id: 'chili_oil', name: 'Chili Oil', cost: 3, select: 2, desc: 'Turn up to 2 selected ingredients Spicy 🌶️', effect: {'set_family': 'spicy', 'prefix': 'Chili '}),
+  Blend(id: 'sea_salt', name: 'Sea Salt', cost: 3, select: 2, desc: 'Turn up to 2 selected ingredients Salty 🧂', effect: {'set_family': 'salty', 'prefix': 'Salted '}),
+  Blend(id: 'fermentation', name: 'Fermentation', cost: 3, select: 1, desc: '+3 intensity to 1 selected ingredient', effect: {'rank_add': 3}),
+  Blend(id: 'sun_dry', name: 'Sun-Dry', cost: 3, select: 1, desc: 'Duplicate 1 selected ingredient into your hand', effect: {'duplicate': true}),
+  Blend(id: 'sharpen', name: 'Whetstone', cost: 4, select: 1, desc: 'Set 1 selected ingredient to intensity 10', effect: {'rank_set': 10}),
+  Blend(id: 'mise', name: 'Mise en Place', cost: 3, select: 0, desc: 'Draw 2 extra ingredients this turn', effect: {'draw': 2}),
+
+  // -------------------------------------------------------------------------
+  // M1 expansion — Dart-native content, no counterpart in `web/game-core.mjs`
+  // and no entry in `test/vectors.json`. Covered by Dart-native tests instead.
+  //
+  // Written to add verbs, not numbers. A blend that is another blend with a
+  // bigger constant is a worse blend than none: it doubles the shop's noise
+  // without adding a decision. So every entry below either introduces a DSL key
+  // (a verb the game could not previously express) or applies an existing one in
+  // a direction the ported six never go — down instead of up, onto the whole
+  // hand instead of a card, out of the deck instead of into it.
+  //
+  // Costs sit at 3-5 alongside the ported six. The scale is roughly "how much
+  // does this move the hand": a family rewrite is 3, a two-card verb is 4, and
+  // the three that create material — a second body, a prized card — are 5.
+
+  // --- the rest of the family rewrites, one per family ------------------------------------
+  // Chili Oil and Sea Salt covered Spicy and Salty; a Flush build in the other
+  // three families had no bridge card at all. Same verb, same shape, same cost.
+  Blend(id: 'brine', name: 'Pickling Brine', cost: 3, select: 2, desc: 'Turn up to 2 selected ingredients Sour 🥒', effect: {'set_family': 'sour', 'prefix': 'Pickled '}),
+  Blend(id: 'jaggery', name: 'Jaggery Glaze', cost: 3, select: 2, desc: 'Turn up to 2 selected ingredients Sweet 🍯', effect: {'set_family': 'sweet', 'prefix': 'Candied '}),
+  Blend(id: 'koji', name: 'Koji', cost: 3, select: 2, desc: 'Turn up to 2 selected ingredients Umami 🍄', effect: {'set_family': 'umami', 'prefix': 'Koji '}),
+
+  // --- intensity, in the directions Fermentation and Whetstone do not go -------------------
+  // Every rank verb the ported six have pushes intensity UP, which quietly means a
+  // Straight can only ever be completed from below. Blanching is the missing half:
+  // a stray 10 becomes the 8 the run needs. Invert Sugar is the same idea as a
+  // reflection rather than a step, and is the only way a hand full of 1s and 2s
+  // turns into one worth cooking.
+  Blend(id: 'blanch', name: 'Blanching', cost: 3, select: 1, desc: '-2 intensity to 1 selected ingredient', effect: {'rank_add': -2}),
+  Blend(id: 'invert', name: 'Invert Sugar', cost: 4, select: 1, desc: "Flip 1 selected ingredient's intensity — a 2 becomes a 9", effect: {'rank_invert': true}),
+  Blend(id: 'cold_smoke', name: 'Cold Smoke', cost: 4, select: 0, desc: '+1 intensity to every ingredient in your hand', effect: {'rank_add': 1, 'scope': 'hand'}),
+
+  // --- the two-card verbs: make this one like that one -------------------------------------
+  // The first selected card is the source and is never touched. These are the
+  // blends that turn a dead card into the card you are missing, which is a
+  // different fantasy from "improve what you hold" and the reason they cost 4-5.
+  Blend(id: 'julienne', name: 'Julienne', cost: 4, select: 2, desc: "Match the 2nd selected ingredient's intensity to the 1st", effect: {'copy_rank': true}),
+  Blend(id: 'infusion', name: 'Infusion', cost: 4, select: 2, desc: "Give the 2nd selected ingredient the 1st's flavor family", effect: {'copy_family': true, 'prefix': 'Infused '}),
+  Blend(id: 'levain', name: 'Lievito Madre', cost: 5, select: 2, desc: 'Make the 2nd selected ingredient a twin of the 1st', effect: {'copy_family': true, 'copy_rank': true, 'prefix': 'Cultured '}),
+  Blend(id: 'reduction', name: 'Reduction', cost: 4, select: 2, desc: 'Boil 2 selected ingredients down into 1 — combined intensity, max 10', effect: {'merge': true}),
+
+  // --- material: more cards, or better ones ------------------------------------------------
+  // Sun-Dry's verb at two targets, and the only blend that makes a card prized.
+  // Both cost 5: creating a body is how Four and Five of a Kind actually happen,
+  // and it is the single most reliable thing a blend can do.
+  Blend(id: 'conserva', name: 'Conserva', cost: 5, select: 2, desc: 'Duplicate up to 2 selected ingredients into your hand', effect: {'duplicate': true}),
+  Blend(id: 'varak', name: 'Varak', cost: 5, select: 1, desc: 'Gild 1 selected ingredient — it becomes prized (+25 flavor)', effect: {'set_prized': true}),
+
+  // --- the deck, which only Mise en Place could reach --------------------------------------
+  // Mise draws blind off the top. Winnowing trades what you hold for what you do
+  // not, and Foraging is the only targeted dig in the game: name a family, get
+  // the next one. Both stay deterministic — deck order decides, never a fresh
+  // roll — so a seed still replays exactly.
+  Blend(id: 'winnow', name: 'Winnowing', cost: 3, select: 2, desc: 'Discard up to 2 selected ingredients and draw that many', effect: {'discard_draw': true}),
+  Blend(id: 'forage', name: 'Foraging', cost: 4, select: 1, desc: "Draw the next ingredient in your pantry sharing the selected one's family", effect: {'draw_matching': true}),
 ];
 
 final Map<String, Blend> kBlendById = {for (final b in kBlends) b.id: b};

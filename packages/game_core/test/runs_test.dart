@@ -378,12 +378,23 @@ RunState _pinnedRun({required String seed, required int stake, required String d
       minorCritics: kPortedMinorCritics,
     );
 
+/// The 6 blends that exist in the JS reference, for the same reason as [_portedUtensilIds].
+///
+/// `rollOffers` picks a blend by index off the seeded RNG, so this list's *length* is part of
+/// the seed contract — replaying these traces against the 20-blend catalog would hand every
+/// recorded blend offer a different blend.
+const _portedBlendIds = {'chili_oil', 'sea_salt', 'fermentation', 'sun_dry', 'sharpen', 'mise'};
+
 void main() {
   setUpAll(() {
     activeUtensilCatalog =
         kUtensils.where((u) => _portedUtensilIds.contains(u.id)).toList();
+    activeBlendCatalog = kBlends.where((b) => _portedBlendIds.contains(b.id)).toList();
   });
-  tearDownAll(() => activeUtensilCatalog = kUtensils);
+  tearDownAll(() {
+    activeUtensilCatalog = kUtensils;
+    activeBlendCatalog = kBlends;
+  });
 
   final file = File('test/vectors.json');
   if (!file.existsSync()) {

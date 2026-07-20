@@ -424,6 +424,35 @@ const Map<String, String> _kBlendWhy = {
       'the dish — copy a 9 and four 9s become five.',
   'mise': 'Draw 2 extra ingredients: pure card advantage, and a free dig for the fifth Flush '
       'card without spending a swap.',
+  // --- the expansion. Same job: say what the verb is FOR, not what it does. ---------------
+  'brine': 'Chili Oil in Sour — the bridge card for a Sour Flush, and Sour is the family '
+      'Kochi and Lima pay a flavor percentage on.',
+  'jaggery': 'Chili Oil in Sweet. Worth knowing which city you are in: Marrakech pays heat '
+      'for Sweet, and the Traditionalist zeroes it out entirely.',
+  'koji': 'Chili Oil in Umami — a Tokyo palate turns every converted card into +2 heat.',
+  'blanch': '-2 intensity. Sounds backwards, and it is the only way to complete a Straight '
+      'downward: holding 4-5-6-7 and a 10, blanching the 10 to an 8 does nothing, but on '
+      '5-6-7-8 and a 10 it finishes the run of five.',
+  'invert': 'Flips intensity end for end — a 2 becomes a 9. The rescue for a hand of low '
+      'cards, and the cheapest way to force a pair of 9s out of a 2 and a 9.',
+  'cold_smoke': '+1 to every ingredient you hold, no selection needed. Small per card, but it '
+      'is the whole hand: on five scoring cards that is +5 flavor before any multiplier.',
+  'julienne': 'Copies the first selected card\'s intensity onto the second. Four 10s and a '
+      'stray becomes five of a rank — a secret recipe from a hand that looked done.',
+  'infusion': 'Copies the first selected card\'s family onto the second, so you are not stuck '
+      'converting to whichever family the blend names. Any family, if you hold one.',
+  'levain': 'Family AND intensity, copied onto the second card: a true twin. The one blend '
+      'that fixes a stray which is wrong in both directions at once.',
+  'reduction': 'Boils two cards into one, combined intensity capped at 10. You lose a body, '
+      'so it is for the hand that is one big card short, never for one that is short of cards.',
+  'conserva': 'Sun-Dry twice over. Two copies is the difference between three of a rank and '
+      'five, which is the jump from base 30 to base 120.',
+  'varak': 'Gilds a card prized: +25 flavor on top of its intensity, which is more than most '
+      'common utensils add for the same coins. Put it on a card you will keep cooking.',
+  'winnow': 'Discard up to 2 and draw that many — a swap that costs no swap. Best when the '
+      'hand is close and two cards are dead weight.',
+  'forage': 'Digs the pantry for the next ingredient sharing the selected card\'s family. The '
+      'only targeted draw in the game: it is how you find the fifth Flush card on purpose.',
 };
 
 /// A valuation before the sort, carrying its original position for a stable tie-break.

@@ -139,9 +139,15 @@ class Critic {
 
 /// A spice blend — a one-shot consumable bought at the bazaar and played from the hand.
 ///
-/// Pure data: what a blend *does* is a switch on [id] in `blends.dart`'s `applyBlend`, the
-/// same shape the web build uses. Unlike utensils there is no DSL here — six hand-written
-/// cases, because each one rewrites cards in a way the effect keys cannot express.
+/// Pure data, in the same spirit as [Utensil]: [effect] is a DSL map that `blends.dart`'s
+/// `applyBlend` interprets, so a new blend is a catalog entry rather than a new `case`.
+/// The web build hard-codes its six; this expresses those same six exactly, plus fourteen
+/// more, with no engine branch per blend.
+///
+/// The two DSLs are deliberately separate. A utensil effect scores a dish it never touches;
+/// a blend effect *edits cards* and can reach the deck. Sharing one key set would have meant
+/// one validator that permits `flavor_add` on a blend and `rank_add` on a utensil, which is
+/// exactly the kind of silently-does-nothing content the allow-list tests exist to stop.
 class Blend {
   const Blend({
     required this.id,
@@ -149,15 +155,20 @@ class Blend {
     required this.cost,
     required this.select,
     required this.desc,
+    required this.effect,
   });
 
   final String id;
   final String name;
   final int cost;
 
-  /// How many held cards the blend targets. 0 = no selection (Mise en Place).
+  /// How many held cards the blend targets. 0 = no selection (Mise en Place, Cold Smoke).
   final int select;
   final String desc;
+
+  /// DSL effect map — see `blends.dart` for the key set and its exact semantics.
+  /// `test/blends_test.dart` holds the allow-list and rejects anything outside it.
+  final Map<String, Object?> effect;
 }
 
 /// A Festival Card — the planet-analog. Buying one raises the run's Kitchen level, which

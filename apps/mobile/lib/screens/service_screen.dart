@@ -841,6 +841,12 @@ class _BlendRack extends StatelessWidget {
         final b = blends[i];
         final needsTarget = b.select > 0;
         final ready = !needsTarget || armed;
+        // Four blends read the FIRST selected card as a source and edit the rest to match
+        // it. "tap 2 cards" doesn't convey that order matters, and getting it backwards
+        // burns the blend — so say which tap is which.
+        final sourced = b.effect.containsKey('copy_family') ||
+            b.effect.containsKey('copy_rank') ||
+            b.effect.containsKey('merge');
         return Opacity(
           opacity: ready ? 1 : 0.45,
           child: GestureDetector(
@@ -866,7 +872,11 @@ class _BlendRack extends StatelessWidget {
                       Text(b.name,
                           style: T.body.copyWith(fontSize: 12, fontWeight: FontWeight.w600)),
                       Text(
-                        needsTarget ? 'tap ${b.select} card${b.select == 1 ? '' : 's'}' : 'tap to use',
+                        !needsTarget
+                            ? 'tap to use'
+                            : sourced
+                                ? 'tap ${b.select} · 1st is source'
+                                : 'tap ${b.select} card${b.select == 1 ? '' : 's'}',
                         style: T.label.copyWith(fontSize: 8),
                       ),
                     ],

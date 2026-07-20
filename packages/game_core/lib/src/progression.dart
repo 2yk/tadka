@@ -546,6 +546,14 @@ List<Utensil> activeUtensilCatalog = kUtensils;
 List<Utensil> unlockedUtensilPool() =>
     activeUtensilCatalog.where((u) => isUnlocked('utensil', u.id)).toList();
 
+/// The blend catalog the shop draws from. Same seam as [activeUtensilCatalog], same reason.
+///
+/// `rollOffers` picks a blend by index off the seeded RNG, so the *length* of this list is
+/// part of the seed contract: 6 entries and 20 entries hand a given roll different blends.
+/// The differential traces in `test/runs_test.dart` narrow it to the ported six so they keep
+/// pinning the run machine against a JS engine that has never heard of the other fourteen.
+List<Blend> activeBlendCatalog = kBlends;
+
 List<Deck> unlockedDecks() =>
     kDecks.where((d) => !d.reserved && isUnlocked('deck', d.id)).toList();
 
