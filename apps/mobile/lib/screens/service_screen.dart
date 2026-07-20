@@ -194,6 +194,18 @@ class _ServiceScreenState extends State<ServiceScreen> {
             enabled: !_busy,
             onTap: (i) => setState(() => c.toggleCard(i)),
           ),
+          if (run.blends.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            _BlendRack(
+              blends: run.blends,
+              armed: c.selected.isNotEmpty,
+              onUse: (i) {
+                final err = c.useBlend(i);
+                setState(() {});
+                if (err == null) hapticForScore(1);
+              },
+            ),
+          ],
           const SizedBox(height: 12),
           _ActionBar(
             cooksLeft: run.cooksLeft,
@@ -572,7 +584,13 @@ class _Hand extends StatelessWidget {
     // one thing the player does constantly. Halving the columns roughly doubles the card and
     // spends the vertical space the layout had going spare.
     const gap = 7.0;
-    final cardW = ((width - 24 - gap * 3) / 4).clamp(56.0, 108.0);
+    // Sized by width AND height. Width alone overflowed the screen on shorter phones once
+    // the blend rack appeared — two rows of tall cards plus a HUD doesn't fit everywhere.
+    // Cap the hand at ~34% of the viewport so the rest of the screen always has room.
+    final height = MediaQuery.sizeOf(context).height;
+    final byWidth = (width - 24 - gap * 3) / 4;
+    final byHeight = (height * 0.34 - gap) / 2 / 1.4;
+    final cardW = (byWidth < byHeight ? byWidth : byHeight).clamp(40.0, 108.0);
     final rows = <List<int>>[];
     for (var i = 0; i < run.hand.length; i += 4) {
       rows.add([for (var j = i; j < i + 4 && j < run.hand.length; j++) j]);
@@ -742,6 +760,71 @@ class _FlyingCardsState extends State<_FlyingCards> with SingleTickerProviderSta
                 );
               }),
           ],
+        );
+      },
+    ),
+  );
+}
+
+/// Consumable spice blends. Tap ingredients first, then a blend — the same grammar the web
+/// build uses, and the reason each chip states what it needs.
+///
+/// Blends edit cards rather than scoring them, and they are the only route to the three
+/// secret recipes, so they earn a permanent slot rather than living behind a menu.
+class _BlendRack extends StatelessWidget {
+  const _BlendRack({required this.blends, required this.armed, required this.onUse});
+
+  final List<gc.Blend> blends;
+
+  /// Whether a selection exists. Blends that need targets stay dimmed until one does.
+  final bool armed;
+  final void Function(int index) onUse;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    height: 42,
+    child: ListView.separated(
+      scrollDirection: Axis.horizontal,
+      itemCount: blends.length,
+      separatorBuilder: (_, _) => const SizedBox(width: 6),
+      itemBuilder: (context, i) {
+        final b = blends[i];
+        final needsTarget = b.select > 0;
+        final ready = !needsTarget || armed;
+        return Opacity(
+          opacity: ready ? 1 : 0.45,
+          child: GestureDetector(
+            onTap: () => onUse(i),
+            behavior: HitTestBehavior.opaque,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 11),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: T.panel,
+                borderRadius: BorderRadius.circular(9),
+                border: Border.all(color: ready ? T.umami : T.line, width: ready ? 1.5 : 1),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('⚗️', style: TextStyle(fontSize: 13)),
+                  const SizedBox(width: 6),
+                  Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(b.name,
+                          style: T.body.copyWith(fontSize: 12, fontWeight: FontWeight.w600)),
+                      Text(
+                        needsTarget ? 'tap ${b.select} card${b.select == 1 ? '' : 's'}' : 'tap to use',
+                        style: T.label.copyWith(fontSize: 8),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
         );
       },
     ),

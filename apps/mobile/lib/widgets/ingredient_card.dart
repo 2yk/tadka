@@ -160,15 +160,25 @@ class IngredientCard extends StatelessWidget {
                             ),
                           ),
                           const Spacer(),
-                          Padding(
-                            padding: const EdgeInsets.only(top: 3),
-                            child: Text(
-                              card.family.toUpperCase(),
-                              style: TextStyle(
-                                fontSize: width * 0.085,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 0.8,
-                                color: T.cream.withValues(alpha: 0.92),
+                          // Must yield rather than overflow: on a short screen the hand
+                          // shrinks to fit height, and "UMAMI" at a fixed size runs off a
+                          // narrow card.
+                          Flexible(
+                            child: Padding(
+                              padding: const EdgeInsets.only(top: 3),
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.topRight,
+                                child: Text(
+                                  card.family.toUpperCase(),
+                                  maxLines: 1,
+                                  style: TextStyle(
+                                    fontSize: width * 0.085,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 0.8,
+                                    color: T.cream.withValues(alpha: 0.92),
+                                  ),
+                                ),
                               ),
                             ),
                           ),

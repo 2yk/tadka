@@ -156,6 +156,26 @@ class GameController extends ChangeNotifier {
     return out;
   }
 
+  /// Applies the blend in slot [index] to the current selection.
+  ///
+  /// Blends are the only route to the three secret recipes, and the only mechanic that
+  /// edits cards rather than scoring them — so the selection is cleared afterwards and the
+  /// hand re-rendered from scratch.
+  String? useBlend(int index) {
+    final r = run;
+    if (r == null) return null;
+    final out = gc.applyBlend(r, index, List<int>.of(selected));
+    if (out.error != null) {
+      errorMessage = out.error;
+      notifyListeners();
+      return out.error;
+    }
+    selected.clear();
+    errorMessage = null;
+    notifyListeners();
+    return null;
+  }
+
   void swap() {
     final r = run;
     if (r == null || selected.isEmpty) return;
