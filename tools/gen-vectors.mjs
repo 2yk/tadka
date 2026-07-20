@@ -189,6 +189,150 @@ const pantryCases = G.DECKS.filter((d) => !d.reserved).map((d) => ({
   cards: G.buildPantry(d).map(card),
 }));
 
+// ---- blend vectors
+// useBlend lives in §UI, not in §RNG..§RUN, so it is not in game-core.mjs and cannot be
+// imported. It is game logic all the same — it is the only thing that rewrites held cards,
+// and the only route to the three secret recipes. Rather than retype it here (a second JS
+// implementation is exactly what this generator exists to prevent), the function's own bytes
+// are sliced out of tadka.html and evaluated against a minimal §UI shim: a `sel` Set, and
+// `flash`/`render` reduced to a message log and a no-op.
+const HTML_SRC = readFileSync(join(ROOT, 'web', 'tadka.html'), 'utf8');
+const UB_START = HTML_SRC.indexOf('function useBlend(');
+const UB_END = HTML_SRC.indexOf('\n}\n', UB_START) + 3;
+if (UB_START < 0 || UB_END < UB_START) throw new Error('useBlend not found in web/tadka.html');
+const USE_BLEND_SRC = HTML_SRC.slice(UB_START, UB_END);
+
+function loadUseBlend() {
+  const body = `'use strict';
+const flashes = [];
+let RUN = null;
+let sel = new Set();
+const flash = (m) => { flashes.push(m); };
+const render = () => {};
+${USE_BLEND_SRC}
+return {
+  apply(run, idxs, i) { RUN = run; sel = new Set(idxs); flashes.length = 0; useBlend(i); return flashes.slice(); },
+};`;
+  // eslint-disable-next-line no-new-func
+  return new Function(body)();
+}
+const ui = loadUseBlend();
+
+// Hands are built by name so each case reads as the board state it is testing. Ids are made
+// distinct even where the pantry would repeat a card, so the Dart comparison can tell two
+// same-rank cards apart — and so Sun-Dry's `_copy` suffix is unambiguous.
+const named = (fam, rank, tag) => ({ ...at(fam, rank), id: `${fam}_${rank}${tag ? `_${tag}` : ''}` });
+const BLEND_BY_ID = Object.fromEntries(G.BLENDS.map((b) => [b.id, b]));
+
+// Every case is scripted: the point is to pin each blend's exact rewrite, not to sample.
+// `blends` is the inventory going in, `use` is the index played — several cases hold more
+// than one so that consuming the right slot is checked, not just consuming something.
+const BLEND_CASES = [
+  // chili_oil — family + display rewrite, and the "extras are ignored" rule
+  { name: 'chili_oil both targets', blends: ['chili_oil'], use: 0, sel: [1, 3],
+    hand: [named('spicy', 8), named('sweet', 4), named('spicy', 8, 'b'), named('sour', 4)] },
+  { name: 'chili_oil one target (select 2, one chosen)', blends: ['chili_oil'], use: 0, sel: [2],
+    hand: [named('spicy', 8), named('spicy', 8, 'b'), named('umami', 6)] },
+  { name: 'chili_oil ignores selections past select', blends: ['chili_oil'], use: 0, sel: [0, 1, 2, 3],
+    hand: [named('sweet', 5), named('sour', 5), named('salty', 5), named('umami', 5)] },
+  { name: 'chili_oil on an already-spicy card', blends: ['chili_oil'], use: 0, sel: [0],
+    hand: [named('spicy', 3), named('sweet', 3)] },
+  // sea_salt — the mirror case, different prefix
+  { name: 'sea_salt both targets', blends: ['sea_salt'], use: 0, sel: [0, 2],
+    hand: [named('umami', 9), named('salty', 2), named('sweet', 7)] },
+  { name: 'sea_salt target order follows selection, not hand order', blends: ['sea_salt'], use: 0, sel: [3, 0],
+    hand: [named('spicy', 1), named('spicy', 2), named('spicy', 3), named('spicy', 4)] },
+  // fermentation — +3 with the cap at 10, checked either side of the boundary
+  { name: 'fermentation mid-rank', blends: ['fermentation'], use: 0, sel: [1],
+    hand: [named('sour', 2), named('sour', 4), named('sour', 6)] },
+  { name: 'fermentation clamps at 10 (7 -> 10)', blends: ['fermentation'], use: 0, sel: [0],
+    hand: [named('umami', 7)] },
+  { name: 'fermentation clamps at 10 (8 -> 10, not 11)', blends: ['fermentation'], use: 0, sel: [0],
+    hand: [named('umami', 8)] },
+  { name: 'fermentation on a rank-10 card is a no-op', blends: ['fermentation'], use: 0, sel: [0],
+    hand: [named('umami', 10)] },
+  { name: 'fermentation takes only the first of two selections', blends: ['fermentation'], use: 0, sel: [1, 0],
+    hand: [named('sweet', 1), named('sweet', 2)] },
+  // sharpen — flat set to 10, up or down is not a thing (rank only ever rises here)
+  { name: 'sharpen a low card', blends: ['sharpen'], use: 0, sel: [2],
+    hand: [named('salty', 9), named('salty', 5), named('salty', 1)] },
+  { name: 'sharpen a rank-10 card', blends: ['sharpen'], use: 0, sel: [0],
+    hand: [named('salty', 10)] },
+  // sun_dry — appends a copy, id suffixed. The last two cases are the duplicate-id shape.
+  { name: 'sun_dry first card', blends: ['sun_dry'], use: 0, sel: [0],
+    hand: [named('spicy', 6), named('sweet', 2)] },
+  { name: 'sun_dry last card', blends: ['sun_dry'], use: 0, sel: [2],
+    hand: [named('spicy', 6), named('sweet', 2), named('sour', 10)] },
+  { name: 'sun_dry twice on the same card mints a duplicate id', blends: ['sun_dry', 'sun_dry'], use: 0, sel: [0],
+    hand: [named('spicy', 6), named('spicy', 6, 'b')], then: { use: 0, sel: [0] } },
+  { name: 'sun_dry then sun_dry the copy chains the suffix', blends: ['sun_dry', 'sun_dry'], use: 0, sel: [0],
+    hand: [named('spicy', 6)], then: { use: 0, sel: [1] } },
+  // mise — deck-driven, needs no selection, stops early on an empty deck
+  { name: 'mise draws 2', blends: ['mise'], use: 0, sel: [],
+    hand: [named('spicy', 1)], deck: [named('sweet', 3), named('sour', 4), named('salty', 5)] },
+  { name: 'mise on a one-card deck draws 1', blends: ['mise'], use: 0, sel: [],
+    hand: [named('spicy', 1)], deck: [named('sweet', 3)] },
+  { name: 'mise on an empty deck draws nothing', blends: ['mise'], use: 0, sel: [],
+    hand: [named('spicy', 1)], deck: [] },
+  { name: 'mise ignores a selection entirely', blends: ['mise'], use: 0, sel: [0],
+    hand: [named('spicy', 1)], deck: [named('sweet', 3), named('sour', 4)] },
+  // the refusal: select > 0 with nothing chosen. Nothing changes, blend is NOT consumed.
+  { name: 'chili_oil with no selection is refused', blends: ['chili_oil'], use: 0, sel: [],
+    hand: [named('sweet', 5), named('sour', 5)] },
+  { name: 'fermentation with no selection is refused', blends: ['fermentation'], use: 0, sel: [],
+    hand: [named('sweet', 5)] },
+  { name: 'sun_dry with no selection is refused', blends: ['sun_dry'], use: 0, sel: [],
+    hand: [named('sweet', 5)] },
+  // inventory bookkeeping: the played slot is the one that goes
+  { name: 'playing the middle blend of three', blends: ['chili_oil', 'sharpen', 'mise'], use: 1, sel: [0],
+    hand: [named('sweet', 2), named('sour', 2)] },
+  { name: 'playing the last blend of three', blends: ['chili_oil', 'sharpen', 'mise'], use: 2, sel: [],
+    hand: [named('sweet', 2)], deck: [named('umami', 8), named('umami', 9)] },
+  // the payoff: each secret recipe, one blend away
+  { name: 'sun_dry completes five_kind', blends: ['sun_dry'], use: 0, sel: [0],
+    hand: [named('spicy', 10), named('sweet', 10), named('sour', 10), named('salty', 10)] },
+  { name: 'chili_oil completes full_family', blends: ['chili_oil'], use: 0, sel: [3, 4],
+    hand: [named('spicy', 8), named('spicy', 8, 'b'), named('spicy', 8, 'c'), named('sweet', 4), named('sour', 4)] },
+  { name: 'chili_oil completes perfect_palate', blends: ['chili_oil'], use: 0, sel: [3, 4],
+    hand: [named('spicy', 6), named('spicy', 6, 'b'), named('spicy', 6, 'c'), named('sweet', 6), named('sour', 6)] },
+];
+
+const blendCases = BLEND_CASES.map((c) => {
+  const run = {
+    hand: c.hand.map((x) => ({ ...x })),
+    deck: (c.deck ?? []).map((x) => ({ ...x })),
+    blends: c.blends.map((id) => ({ ...BLEND_BY_ID[id] })),
+  };
+  // `before` carries whole cards for the deck too — the Dart side rebuilds the run from it,
+  // and Mise en Place moves deck cards into the hand, so ids alone would not be enough.
+  const before = { hand: run.hand.map(card), deck: run.deck.map(card), blends: run.blends.map((b) => b.id) };
+  const steps = [];
+  for (const step of [{ use: c.use, sel: c.sel }, ...(c.then ? [c.then] : [])]) {
+    const msgs = ui.apply(run, step.sel, step.use);
+    steps.push({
+      use: step.use,
+      sel: step.sel,
+      // The only observable difference between a refusal and a success is which message came
+      // back, so record it verbatim: it pins the Dart error string to the web's, not just the
+      // fact that something was refused.
+      flash: msgs[0] ?? null,
+      hand: run.hand.map(card),
+      deck: run.deck.map((x) => x.id),
+      blends: run.blends.map((b) => b.id),
+    });
+  }
+  // bestPattern on the resulting hand: proves the rewrite lands where the engine can see it,
+  // which is the whole reason blends exist.
+  const finalHand = run.hand.slice(0, 5);
+  return {
+    name: c.name,
+    before,
+    steps,
+    pattern: G.bestPattern(finalHand).pattern,
+    patternCards: finalHand.map((x) => x.id),
+  };
+});
+
 // ===========================================================================
 // §PROGRESSION + §RUN traces
 // ===========================================================================
@@ -651,6 +795,7 @@ const payload = {
   scores: scoreCases,
   dishErrors: errCases,
   pantries: pantryCases,
+  blends: blendCases,
   // A fresh save, serialized. Pins the exact `tadka_profile_v1` shape so the Dart Profile
   // stays byte-compatible with a save written by the web build.
   defaultProfile: JSON.stringify(core.defaultProfile()),
@@ -673,7 +818,7 @@ const deepest = runCases.reduce((m, r) => {
   return Math.max(m, last.cityIndex * 3 + last.serviceIndex);
 }, 0);
 console.log(`wrote ${OUT}`);
-console.log(`  rng ${rngCases.length} · patterns ${patternCases.length} · scores ${scoreCases.length} · dishErrors ${errCases.length} · pantries ${pantryCases.length}`);
+console.log(`  rng ${rngCases.length} · patterns ${patternCases.length} · scores ${scoreCases.length} · dishErrors ${errCases.length} · pantries ${pantryCases.length} · blends ${blendCases.length}`);
 console.log('  pattern coverage:', Object.entries(dist).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}=${v}`).join(' '));
 console.log(`  runs ${runCases.length} · steps ${stepTotal} · endless ${endlessCases.length}x6 · runsWon ${wonCases.length} · leaderboard ${leaderboardCases.length} · banks ${bankCases.length}`);
 console.log('  step tags:', Object.entries(tagDist).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}=${v}`).join(' '));

@@ -139,8 +139,9 @@ class Critic {
 
 /// A spice blend — a one-shot consumable bought at the bazaar and played from the hand.
 ///
-/// The blends themselves are applied by the UI layer (they mutate held cards); `game_core`
-/// only owns the inventory, which is why this type carries no behaviour.
+/// Pure data: what a blend *does* is a switch on [id] in `blends.dart`'s `applyBlend`, the
+/// same shape the web build uses. Unlike utensils there is no DSL here — six hand-written
+/// cases, because each one rewrites cards in a way the effect keys cannot express.
 class Blend {
   const Blend({
     required this.id,
