@@ -194,17 +194,28 @@ class IngredientCard extends StatelessWidget {
                       ),
                       Container(height: 1, color: T.parchDark),
                       const SizedBox(height: 3),
-                      Text(
-                        card.display,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontFamily: T.display,
-                          fontWeight: FontWeight.w600,
-                          fontSize: width * 0.115,
-                          color: T.inkDark,
-                          height: 1.1,
+                      // Ingredient names run long ("Condensed Milk", "Fermented Lime") and a
+                      // fixed size breaks them mid-word on a narrow card. Scale to fit instead,
+                      // so wrapping only ever happens at spaces.
+                      SizedBox(
+                        height: width * 0.30,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(maxWidth: width * 1.6),
+                            child: Text(
+                              card.display,
+                              maxLines: 2,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontFamily: T.display,
+                                fontWeight: FontWeight.w600,
+                                fontSize: width * 0.145,
+                                color: T.inkDark,
+                                height: 1.12,
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                     ],

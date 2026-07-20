@@ -99,12 +99,17 @@ class _StartScreenState extends State<StartScreen> {
               ],
             ),
             const SizedBox(height: 6),
-            Text(
-              gc.kStakeById[c.stake]!.modifiers.isEmpty
-                  ? 'Base difficulty — the tutorial stake.'
-                  : gc.kStakeById[c.stake]!.modifiers.map((m) => m.describe()).join(' · '),
-              style: T.bodyDim.copyWith(fontSize: 12, color: T.bad),
-            ),
+            Builder(builder: (context) {
+              // Red is for the penalties a stake imposes. Stake 1 has none, so colouring its
+              // description as a warning misreads the tutorial stake as dangerous.
+              final mods = gc.kStakeById[c.stake]!.modifiers;
+              return Text(
+                mods.isEmpty
+                    ? 'Base difficulty — the tutorial stake.'
+                    : mods.map((m) => m.describe()).join(' · '),
+                style: T.bodyDim.copyWith(fontSize: 12, color: mods.isEmpty ? T.dim : T.bad),
+              );
+            }),
 
             const SizedBox(height: 22),
             TextField(

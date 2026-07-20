@@ -116,6 +116,10 @@ class _ServiceScreenState extends State<ServiceScreen> {
           _ScoreBar(run: run),
           const SizedBox(height: 8),
           _UtensilRack(run: run),
+          const SizedBox(height: 12),
+          _RouteStrip(run: run),
+          // Everything below is anchored to the thumb zone; the gap above is the "stage" the
+          // dish resolves into, and is intentional per the layout brief.
           const Spacer(),
           if (_toast != null)
             _DishToast(result: _toast!, cityId: city.id)
@@ -189,6 +193,75 @@ class _Header extends StatelessWidget {
           const SizedBox(height: 2),
           Text('✦ ${critic.name} — ${critic.rule}',
               style: T.bodyDim.copyWith(color: T.bad, fontSize: 12)),
+        ],
+      ],
+    );
+  }
+}
+
+/// The journey, at a glance: three cities of three services, with the current one lit.
+///
+/// A run is a route — the concept doc's whole pitch is travelling it — but the header only
+/// ever shows where you are, never how far you've come or what's left. This makes the shape
+/// of the run legible without spending a tap.
+class _RouteStrip extends StatelessWidget {
+  const _RouteStrip({required this.run});
+
+  final gc.RunState run;
+
+  @override
+  Widget build(BuildContext context) {
+    if (run.endless) {
+      return Text('THE LONG ROUTE · ${run.endlessCity}  ·  DISTANCE ${run.distance}',
+          textAlign: TextAlign.center, style: T.label);
+    }
+    return Row(
+      children: [
+        for (var ci = 0; ci < gc.kCities.length; ci++) ...[
+          if (ci > 0)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              child: Text('›', style: T.bodyDim.copyWith(fontSize: 13)),
+            ),
+          Expanded(
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(3, (si) {
+                    final done = ci < run.cityIndex || (ci == run.cityIndex && si < run.serviceIndex);
+                    final here = ci == run.cityIndex && si == run.serviceIndex;
+                    final boss = si == 2;
+                    return Container(
+                      width: here ? 9 : 6,
+                      height: here ? 9 : 6,
+                      margin: const EdgeInsets.symmetric(horizontal: 2.5),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: done
+                            ? T.good
+                            : here
+                                ? T.brass
+                                : Colors.transparent,
+                        border: Border.all(
+                          color: done ? T.good : (here ? T.brass : (boss ? T.bad : T.line)),
+                          width: 1.4,
+                        ),
+                      ),
+                    );
+                  }),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  gc.kCities[ci].name.split(' ').first.toUpperCase(),
+                  style: T.label.copyWith(
+                    fontSize: 9.5,
+                    color: ci == run.cityIndex ? T.ink : T.dim.withValues(alpha: 0.55),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ],
     );
