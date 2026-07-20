@@ -5,6 +5,7 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:game_core/game_core.dart' as gc;
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../daily.dart';
 import '../game_controller.dart';
@@ -163,6 +164,9 @@ class _StartScreenState extends State<StartScreen> {
                 ),
               ),
             ),
+            const SizedBox(height: 14),
+            // A tester who says "it crashed" is telling you almost nothing without this.
+            const Center(child: _BuildStamp()),
           ],
         ),
       ),
@@ -265,5 +269,28 @@ class _DailyCard extends StatelessWidget {
         ],
       ),
     ),
+  );
+}
+
+/// Build identifier, shown quietly on the start screen.
+///
+/// External testers report bugs hours or days later, often on a build that has since been
+/// replaced. Without a version on screen, "it crashed on the third city" can't be matched to a
+/// commit — and since every run is already reproducible from its seed, a build plus a seed is a
+/// complete bug report.
+class _BuildStamp extends StatelessWidget {
+  const _BuildStamp();
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<PackageInfo>(
+    future: PackageInfo.fromPlatform(),
+    builder: (context, snap) {
+      final info = snap.data;
+      if (info == null) return const SizedBox(height: 12);
+      return Text(
+        'v${info.version}+${info.buildNumber}',
+        style: T.label.copyWith(fontSize: 9, color: T.dim.withValues(alpha: 0.6)),
+      );
+    },
   );
 }

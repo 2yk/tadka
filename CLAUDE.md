@@ -1,174 +1,153 @@
 # Project Tadka — "Spice Route"
 
-A premium roguelike deckbuilder for iOS/Android: you cook dishes from a pantry of ingredient cards,
-poker-style patterns become regional dishes, utensils multiply the score into absurd numbers.
-Solo project, no backend, no ads/IAP.
+A premium roguelike deckbuilder for iOS/Android: you cook dishes from a pantry of ingredient
+cards, poker-style patterns become regional dishes, utensils multiply the score into absurd
+numbers. Solo project, no backend, no ads/IAP.
 
-**Current state: M0 graybox — the fun-check.** The whole game is one self-contained web file
-([`web/tadka.html`](web/tadka.html)) whose only job is to answer GO / NO-GO on the core loop.
-Ugly is correct; fun is mandatory. M1 is a rewrite in Flutter + Flame — the web build is
-deliberately throwaway *except* for its logic layers, which are structured to port 1:1 to Dart.
-
-## Docs, in authority order
-
-| File | What it is |
-|---|---|
-| [`spice-route-concept-doc.md`](spice-route-concept-doc.md) | The vision — theme, full v1.0 scope, art brief, milestones, business case. Aspirational; most of it is not built. |
-| [`tadka-m0-build-spec.md`](tadka-m0-build-spec.md) | The contract for what M0 must contain. **Scoring order-of-operations in §4 is normative** — the engine implements it exactly. |
-| [`web/README.md`](web/README.md) | What actually shipped, how to test on a phone, balance findings, and the port table. Closest to the truth. |
-| [`web/asset-pack/DESIGN-SYSTEM.md`](web/asset-pack/DESIGN-SYSTEM.md) | "Midnight Bazaar" art direction — tokens, type, components, motion spec. |
-
-Where the concept doc and the shipped build disagree, the build wins — it has been tuned against
-the simulator. Note the concept doc still describes an 8-city run; M0 ships 3 cities.
+**Current state: M1 Flutter app, content-complete, heading to external testers.**
+The M0 fun-check passed — a full run was played and finished. Art and sound are deliberately
+deferred until the systems have been tested; everything on screen is placeholder emoji and
+generated SVG.
 
 ## Layout
 
 ```
-web/tadka.html          THE GAME. 1648 lines, zero dependencies, zero build step.
-web/game-core.mjs       GENERATED mirror of the pure layers — do not hand-edit (see below).
-web/data/*.json         Schema documentation + future Flutter assets. NOT loaded at runtime.
-web/asset-pack/         Generated SVG art + generate_assets.py + the design system.
-tools/sim.mjs           Headless balance simulator (greedy bot, win-rate per stake).
-tools/extract-core.mjs  Regenerates game-core.mjs from tadka.html.
+packages/game_core/     THE GAME. Pure Dart — rules, scoring, RNG, run state, progression,
+                        blends, the Coach solver. Zero Flutter imports (enforced by a test).
+packages/content/       JSON loader/validator. Scaffolded; catalogs still live in game_core.
+apps/mobile/            Flutter app. Presentation only — it owns no rules.
+tools/sim/              Headless balance simulator (Dart).
+web/                    FROZEN. The M0 web prototype, kept as the differential reference.
+tools/*.mjs             Node tooling for that reference: extract-core, gen-vectors, sim.
 ```
 
-`tadka.html` is sectioned so each block maps to a future Dart package. Nothing touches the DOM until `§UI`:
+`apps/mobile` delegates every decision — legality, scoring, economy, offers — to `game_core`.
+The live dish preview calls the real `scoreDish`, so what it shows is what COOK will pay. Keep
+that property; a parallel implementation that drifts is worse than none.
 
-| Section | Lines | Ports to |
-|---|---|---|
-| `ART` blob + `§ART` | 255–307 | `apps/mobile` — inline SVG skin |
-| `§RNG` | 309–327 | `game_core` — seeded PRNG (`makeRng`) |
-| `§CONTENT` | 328–463 | `content` — already valid JSON shapes |
-| `§ENGINE` | 464–606 | `game_core` — `bestPattern`, `scoreDish`, `dishError` |
-| `§PROGRESSION` | 607–739 | `game_core` + meta — stakes, decks, achievements, unlocks |
-| `§RUN` | 740–908 | `game_core` — run state machine, economy, bazaar |
-| `§UI` | 909–1648 | `apps/mobile` — throwaway shell |
+## The trap that has bitten four times
 
-## The one invariant that will bite you
+**Seeded-list lengths are part of the seed contract.** `rng.pick(list)` indexes by length, so
+appending to any list the run RNG draws from re-rolls every recorded seed and breaks the
+differential traces. This has happened with `kUtensils`, `kBlends`, `kFestivals`, and — the
+nastiest one — the *filtered* list `kCityPool.where(criticCanCloseARun)`, which is perturbed by
+editing a **critic**, a file that looks nothing like the list it breaks.
 
-`web/game-core.mjs` is a **byte-for-byte extract of `tadka.html` lines 309–908** (§RNG through §RUN),
-wrapped in a Node shim and an export block. It exists so `tools/sim.mjs` scores *exactly* like the
-game, with no parallel implementation that can drift.
+The established fix is a fixture-scoping seam:
 
-**`tadka.html` is the source of truth. Never hand-edit `game-core.mjs`.** After changing anything in
-§RNG..§RUN:
-
-```bash
-node tools/extract-core.mjs           # regenerate
-node tools/extract-core.mjs --check   # verify sync; exits 1 on drift
+```dart
+List<Utensil> activeUtensilCatalog = kUtensils;   // and activeBlendCatalog, activeFestivalCatalog
 ```
 
-The same discipline applies to `web/data/*.json` and the inline `STAKES` / `DECKS` / `ACHIEVEMENTS`
-tables — those are hand-maintained duplicates, and **editing the JSON changes nothing in the game**.
-Change the inline copy in `tadka.html` too, or the JSON is a lie.
+Live play uses everything; `runs_test.dart` pins each to the ported set in `setUpAll`. The route
+is a `newRun` parameter for the same reason. **Scope the fixture, don't freeze the game.**
 
-## Hard constraints on `tadka.html`
+Never regenerate `vectors.json` to make a failing test pass. Those vectors are recorded from the
+frozen JS engine; regenerating them against Dart would only prove Dart agrees with Dart.
 
-These are why the file looks the way it does. Breaking one breaks phone testing.
+## How this codebase is tested
 
-- **Single self-contained file.** No build step, no bundler, no `package.json`, no npm deps.
-- **No network at runtime.** No `fetch`, no `import`, no XHR. It must work from `file://` and under
-  the strict CSP of a hosted Artifact. Google Fonts is a soft `@import` with a serif/system fallback;
-  everything else — all art — is inline SVG in the `ART` blob.
-- **Classic script, not a module.** No `type="module"`. Every top-level binding is global, which is
-  how you poke the engine from the browser console: `scoreDish(...)`, `bestPattern([...])`, `RUN`.
-- **Portrait, thumb-zone layout.** The empty space above the action bar is intentional.
+Unusually adversarially, on purpose — the engine is tuned and a silent scoring change would ruin
+a balanced game invisibly.
+
+- **Differential vectors** (`test/vectors.json`, ~6,200 cases) — scoring, patterns, RNG, pantry
+  builds, blends, all recorded from `web/game-core.mjs` and asserted exactly, doubles included.
+- **Whole-run traces** — 48 scripted runs replayed step for step against the JS engine.
+- **Mutation testing** — every major suite has been checked by deliberately breaking the code and
+  confirming the tests fail. If you add a suite, do this; a test that can't fail is decoration.
+- **DSL allow-lists** — utensil and blend effect keys are validated; an unknown key fails loudly
+  rather than silently doing nothing.
+
+`web/game-core.mjs` must stay a byte-for-byte extract of `tadka.html`:
+`node tools/extract-core.mjs --check`. CI runs it first, because drift there invalidates
+everything measured against it.
+
+## Content is data; the DSL is the boundary
+
+Utensils and blends are pure data so content scales without engine changes.
+
+- **utensil conditions:** `all_cards_family`, `contains_family`, `all_cards_same_family`,
+  `min_cards`, `num_cards`, `pattern_is`, `pattern_at_least`, `is_first_dish`, `is_last_dish`
+- **utensil effects:** `flavor_add`, `heat_add`, `heat_mult`, `flavor_mult`, `flavor_per_card`,
+  `heat_per_card`, `coin_add`, `retrigger_highest`, `copy_right`
+- **blend effects:** `set_family`, `copy_family`, `rank_set`, `rank_add`, `rank_invert`,
+  `copy_rank`, `set_prized`, `prefix`, `duplicate`, `merge`, `discard_draw`, `draw_matching`,
+  `draw`, and the `scope: 'hand'` modifier
+- **critics:** `maxCards`, `minCards`, `debuff`, `requireFamily` only
+
+If content needs a new key, add it deliberately with tests — don't route around it with a rule
+forbidding the content. A content rule that exists to dodge an engine bug ages badly.
+
+**Any critic that can end a run must not cap score** (`criticCanCloseARun`): a card cap holds you
+at Three of a Kind, a required family can make a Flush impossible. Both are ceilings no Kitchen
+level clears.
 
 ## Commands
 
 ```bash
-# Play it
-open web/tadka.html                       # file:// works
-cd web && python3 -m http.server 8000     # then http://<mac-lan-ip>:8000/tadka.html on a phone
-                                          # LAN IP: ipconfig getifaddr en0
+dart analyze                                   # whole workspace
+cd packages/game_core && dart test             # ~500 tests
+cd apps/mobile && flutter test                 # ~47 widget tests
+cd tools/sim && dart run bin/sim.dart -n 300   # balance ladder
 
-# Balance
-node tools/sim.mjs                        # win-rate ladder, all 8 stakes, 500 runs each (~30s)
-node tools/sim.mjs --stake 3
-node tools/sim.mjs --stake 8 -n 2000 --deck royal
+node tools/extract-core.mjs --check            # web reference integrity
 
-# Engine sync
-node tools/extract-core.mjs --check
+cd apps/mobile && flutter build apk --release
+~/Library/Android/sdk/platform-tools/adb install -r build/app/outputs/flutter-apk/app-release.apk
+flutter build ios --release && xcrun devicectl device install app --device <UDID> build/ios/iphoneos/Runner.app
 ```
 
-Verified 2026-07-20 on Node v24.12.0 / Python 3.11.4 — both present on this machine, despite
-`web/README.md` and `tools/sim.mjs` headers saying Node was unavailable when they were written.
-Current ladder at 200 runs: Paprika 26%, Jalapeño 3%, everything above ~0–1%. That matches the
-in-browser figures in the README and meets the spec's acceptance bar (monotone, stake 8 ≤ 2%),
-but the upper stakes are steep for the bot because the coin→Kitchen-level loop is economy-sensitive.
-They are config and want real-play data before a tuning pass.
+## Reading the simulator
 
-## Tuning is data, not code
+The bot is a greedy approximation with no taste — it never rerolls and declines nothing on its
+own. Two things follow:
 
-Change a number, reload. No logic touched. All of these live in `§CONTENT` / `§PROGRESSION` of
-`tadka.html` (and mirror into `game-core.mjs` via the extractor):
+1. **Only the shape of the ladder is meaningful**, not the absolute win rate. The bar is
+   monotone-decreasing with stake 8 at or near 0.
+2. **Bot selectivity is a percentile of the pool** (`--pct`, default 55), not an absolute
+   threshold. An absolute floor gets less selective as the catalog grows, which produced a false
+   "balance collapse" twice. `--floor N` forces an absolute for A/B work.
 
-`CITIES` (score targets) · `UTENSILS` · `PALATES` · `CRITICS` · `LEVEL_BONUS` (Festival/recipe
-scaling) · `RARITY_WEIGHTS` · `STAKES`.
+When a ladder moves after a content drop, isolate before tuning: revert one half, re-measure. On
+three occasions the apparent regression was the instrument, not the game.
 
-Two load-bearing balance facts, both hard-won — don't undo them without re-simming:
+Load-bearing balance facts, hard-won — don't undo without re-simming:
 
-- **Festival recipe-leveling is the scaling engine.** Without it a maxed build caps around 15k and
-  Naples (18k–50k) is impossible for everyone. Leveled base × utensil multipliers is what makes the
-  late targets reachable.
-- **Kochi's Minimalist boss is 1200, not the spec'd 2000.** Max-3-cards caps you at Three-of-a-Kind,
-  which made an all-flavor build mathematically capped at ~1572 — unwinnable.
+- **Festival recipe-leveling is the scaling engine.** Without it a maxed build caps and the late
+  targets are unreachable. Note it levels the whole Kitchen, not the recipe named on the card —
+  a divergence from concept doc §3.4 that is deliberate and balance-tested.
+- **Targets follow `210·(s+2)²`** across the 24-service route, derived from `kLevelBonus` being
+  linear in Kitchen level. A geometric curve reproducing M0's Naples numbers sims 0% everywhere.
 
-Naples' finale critic is fixed to The Traditionalist on purpose; rolling Minimalist on a 50k target
-was unwinnable at any level.
+## Docs
 
-## Effect DSL
+| File | What it is |
+|---|---|
+| [`spice-route-concept-doc.md`](spice-route-concept-doc.md) | The vision and v1.0 scope. Content targets are now met; the art brief and business case are still ahead. |
+| [`tadka-m0-build-spec.md`](tadka-m0-build-spec.md) | The M0 contract. Scoring order-of-operations in §4 is still normative. |
+| [`web/README.md`](web/README.md) | Describes the frozen M0 web build. Historical. |
+| [`web/asset-pack/DESIGN-SYSTEM.md`](web/asset-pack/DESIGN-SYSTEM.md) | "Midnight Bazaar" tokens, type, components, motion spec — still the visual contract. |
 
-Utensils are pure data so content scales without engine changes. The M0 build extends the spec's
-starter key set — **keep these in the Dart validator's allow-list**:
-
-- conditions: spec's `all_cards_family`, `contains_family`, `min_cards`, `pattern_is`, `card_family`,
-  `is_first_dish`, `is_last_dish` — plus `num_cards`, `all_cards_same_family`, `pattern_at_least`
-- effects: spec's `flavor_add`, `heat_add`, `heat_mult`, `retrigger_highest`, `coin_add`,
-  `flavor_per_card` — plus `heat_per_card`, `copy_right` (Grandmother's Ladle)
-
-The validator must reject unknown keys. That discipline is what keeps 100+ future utensils safe.
-
-## Things to preserve
-
-- **The Coach (`§UI`, ~1014–1320) drives the live engine.** It calls `scoreDish` / `bestPattern` /
-  `dishError` / `rollOffers` rather than reimplementing scoring, so every number it shows is exactly
-  what the game will score. If you touch it, keep that property — a parallel solver that drifts is
-  worse than no Coach.
-- **Seeded determinism, with entropy only at the boundary.** One seeded RNG (`makeRng`) owns every
-  shuffle and shop roll, so a run is a pure function of (seed, stake, deck, player choices). Same
-  seed → identical run. This underwrites bug reports, seed sharing, the future Daily Route, and the
-  determinism golden test.
-
-  `Math.random()` is legitimate in exactly two places, and **`game-core.mjs` must stay at zero**:
-  `randomSeed()` (`§UI`), which mints the seed *before* the run starts, and particle VFX
-  (~1525–1532), which never touches game state. Anywhere else it breaks reproducibility silently.
-
-  Note that a blank seed field is **not** an unseeded run — it generates a `SPICE-XXXXX` code and
-  seeds normally, so every run stays replayable from the summary screen. The seed alphabet omits
-  `I`/`O`/`0`/`1` because players read seeds off a phone and retype them; keep it that way.
-- **Unlocks are never lost on death.** `loadProfile` merges over `defaultProfile()` so added fields
-  survive old saves; "Show step tips again" resets tips but must not touch the profile.
-
-`localStorage` keys: `tadka_profile_v1` (meta-save, write-through) · `tadka_coach` · `tadka_seen` ·
-`tadka_tipsoff`. All accesses are `try/catch`-wrapped for CSP/Artifact safety.
+`tadka-progression-spec.md` is referenced by `web/README.md` but is not in the repo.
 
 ## Known gaps
 
-- **No automated tests, no CI.** The README's "22 hand-computed golden cases pass" describes ad-hoc
-  browser-console sessions that were never committed. `tools/sim.mjs` is the only executable check
-  in the repo, and it verifies balance, not correctness. Those golden cases become real tests in the
-  Dart `game_core`.
-- **`tadka-progression-spec.md` is referenced twice by `web/README.md` but is not in the repo.**
-  The progression layer was built from it, so it exists somewhere — it just was never committed.
-- **`web/asset-pack/generate_assets.py` writes to a hardcoded `/mnt/user-data/outputs/tadka-assets`**
-  (a sandbox path). Edit `OUT` before running it here. Its output is also not wired to the game:
-  the `ART` blob in `tadka.html` is hand-pasted, so regenerating art is generate → copy → inline,
-  all manual.
+- **No sound.** Deliberately excluded for now.
+- **Art is placeholder** — emoji and generated SVG. Fraunces/Inter aren't bundled, so display
+  type falls back to a platform serif.
+- **Unlocks are generous** — 24 of 95 utensils gated. The concept doc wants ~60% locked at
+  launch; leaving content reachable was chosen so testers actually see it.
+- **Android is debug-signed**; iOS uses free provisioning (7-day expiry, re-install to fix).
+- **Not expressible without engine work:** The Rival Chef (dish cap — also changes the economy,
+  since unused cooks pay coins), The Health Inspector (slot-0 suppression, with a trap around
+  Grandmother's Ladle hopping right), the Golden Thali legendary (pattern-rewrite key), and a
+  wild-card blend (needs a `Card` field and `bestPattern` changes).
+- `packages/content` is still a scaffold; the catalogs live in `game_core`.
 
 ## Working conventions
 
 - Commit non-breaking changes automatically, with a clear message. **Never add a co-author line.**
 - Anything needing a human decision or a device check: stop, and end with the commit message plus
   explicit "how to test this" steps.
-- M0 deploys nowhere. Device builds and the local server only.
+- Verify on a real device when the change has a visual surface. Several bugs this project shipped
+  past unit tests and were only caught by looking at a phone.
