@@ -1,0 +1,110 @@
+# ---------------------------------------------------------------------------
+# Dart / Flutter build artifacts
+# ---------------------------------------------------------------------------
+.dart_tool/
+.packages
+.pub/
+.pub-cache/
+build/
+.build/
+.buildlog/
+migrate_working_dir/
+pubspec_overrides.yaml
+**/doc/api/
+*.dart.js
+*.info.json
+*.js.deps
+*.js.map
+
+# The pub workspace resolves at the repo root; member lockfiles must not exist.
+packages/*/pubspec.lock
+apps/*/pubspec.lock
+tools/*/pubspec.lock
+
+# Coverage
+coverage/
+lcov.info
+
+# ---------------------------------------------------------------------------
+# Flutter tooling
+# ---------------------------------------------------------------------------
+.flutter-plugins
+.flutter-plugins-dependencies
+.fvm/
+app.*.symbols
+app.*.map.json
+
+# ---------------------------------------------------------------------------
+# iOS / Xcode / CocoaPods
+# ---------------------------------------------------------------------------
+**/ios/Pods/
+**/ios/.symlinks/
+**/ios/Flutter/.last_build_id
+**/ios/Flutter/App.framework
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Flutter.podspec
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/ephemeral/
+**/ios/Flutter/flutter_export_environment.sh
+**/ios/ServiceDefinitions.json
+**/ios/Runner/GeneratedPluginRegistrant.*
+.swiftpm/
+DerivedData/
+xcuserdata/
+*.ipa
+*.dSYM
+*.dSYM.zip
+*.moved-aside
+*.pbxuser
+*.perspectivev3
+!default.pbxuser
+!default.perspectivev3
+
+# ---------------------------------------------------------------------------
+# Android / Gradle
+# ---------------------------------------------------------------------------
+**/android/.gradle/
+**/android/captures/
+**/android/local.properties
+**/android/key.properties
+**/android/**/GeneratedPluginRegistrant.java
+**/android/app/debug/
+**/android/app/profile/
+**/android/app/release/
+*.jks
+*.keystore
+*.apk
+*.aab
+*.class
+
+# ---------------------------------------------------------------------------
+# IDE / editor
+# ---------------------------------------------------------------------------
+*.iml
+*.ipr
+*.iws
+.idea/
+.atom/
+.history
+*.swp
+*~
+# .vscode is intentionally NOT ignored: launch configs are worth sharing.
+
+# ---------------------------------------------------------------------------
+# Misc
+# ---------------------------------------------------------------------------
+*.log
+*.pyc
+__pycache__/
+.svn/
+
+# ---------------------------------------------------------------------------
+# The M0 web prototype is the shipped game and stays fully tracked. This
+# negation is a guard: no rule above may ever exclude a file under web/.
+# (web/ itself is never excluded, so the re-include is always effective.)
+# ---------------------------------------------------------------------------
+!/web/**
+
+# Ignored everywhere, including under web/ — Finder droppings are not source.
+# Must stay last: in git, the final matching pattern wins.
+.DS_Store

@@ -1,0 +1,26 @@
+# Project Tadka — "Spice Route"
+#
+# Root of the Dart pub workspace (Dart 3.6+). This package holds no code; it
+# exists to give every member package a single shared dependency resolution and
+# one `.dart_tool/package_config.json` at the repo root.
+#
+#   flutter pub get      # resolve the whole workspace (use flutter, not dart —
+#                        # apps/mobile pulls in the Flutter SDK)
+#   dart analyze         # analyze every member
+#   dart test            # run tests from within a member package
+name: tadka_workspace
+description: Workspace root for Project Tadka (game_core, content, mobile app, sim).
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.12.0
+
+workspace:
+  - packages/game_core
+  - packages/content
+  - apps/mobile
+  - tools/sim
+
+dev_dependencies:
+  lints: ^6.0.0

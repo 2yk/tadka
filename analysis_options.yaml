@@ -1,0 +1,29 @@
+# Analysis options for the whole workspace.
+#
+# apps/mobile overrides this with its own analysis_options.yaml (flutter_lints),
+# because Flutter code needs the Flutter-specific rules. Every pure-Dart member
+# (packages/game_core, packages/content, tools/sim) inherits this file.
+include: package:lints/recommended.yaml
+
+analyzer:
+  exclude:
+    # The M0 web prototype is plain JS/HTML and generated art; nothing to analyze.
+    - web/**
+  language:
+    strict-casts: true
+    strict-inference: true
+    strict-raw-types: true
+  errors:
+    # Unused code and stale TODO-shaped cruft should fail, not whisper.
+    unused_import: error
+    unused_local_variable: error
+
+linter:
+  rules:
+    # game_core is meant to be immutable-ish value types + a reducer (build spec §3).
+    prefer_final_locals: true
+    prefer_final_in_for_each: true
+    avoid_dynamic_calls: true
+    # Determinism is load-bearing (CLAUDE.md): keep the public surface documented
+    # enough to review, but don't demand docs on every private helper.
+    always_declare_return_types: true

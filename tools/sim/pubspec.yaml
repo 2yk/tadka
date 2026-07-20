@@ -1,0 +1,19 @@
+name: sim
+description: >-
+  Headless balance simulator for Project Tadka (build spec §3). Plays N runs
+  with a scripted policy and prints the score distribution, average death city
+  and utensil pick stats. The Dart successor to tools/sim.mjs.
+version: 0.1.0
+publish_to: none
+resolution: workspace
+
+environment:
+  sdk: ^3.12.0
+
+dependencies:
+  game_core:
+    path: ../../packages/game_core
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.25.6

@@ -1,0 +1,39 @@
+name: tadka_mobile
+description: "Project Tadka — Spice Route. Flutter + Flame UI shell (build spec §3)."
+publish_to: 'none'
+
+# In Android, build-name is used as versionName while build-number is used as
+# versionCode. In iOS, build-name is CFBundleShortVersionString and build-number
+# is CFBundleVersion.
+version: 1.0.0+1
+
+resolution: workspace
+
+environment:
+  sdk: ^3.12.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  flame: ^1.38.0
+  cupertino_icons: ^1.0.8
+
+  # Workspace-local packages. game_core stays Flutter-free; everything the UI
+  # renders comes out of it or out of content.
+  game_core:
+    path: ../../packages/game_core
+  content:
+    path: ../../packages/content
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+
+  # To add assets, add an assets section here, e.g.:
+  # assets:
+  #   - assets/images/
