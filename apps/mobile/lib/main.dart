@@ -26,30 +26,34 @@ Future<void> main() async {
   final prefs = await SharedPreferences.getInstance();
   gc.profileStore = PrefsProfileStore(prefs);
   gc.reloadProfile();
-  runApp(const TadkaApp());
+  runApp(TadkaApp(prefs: prefs));
 }
 
 class TadkaApp extends StatelessWidget {
-  const TadkaApp({super.key});
+  const TadkaApp({required this.prefs, super.key});
+
+  final SharedPreferences prefs;
 
   @override
   Widget build(BuildContext context) => MaterialApp(
     title: 'Spice Route',
     debugShowCheckedModeBanner: false,
     theme: T.theme(),
-    home: const GameRoot(),
+    home: GameRoot(prefs: prefs),
   );
 }
 
 class GameRoot extends StatefulWidget {
-  const GameRoot({super.key});
+  const GameRoot({required this.prefs, super.key});
+
+  final SharedPreferences prefs;
 
   @override
   State<GameRoot> createState() => _GameRootState();
 }
 
 class _GameRootState extends State<GameRoot> {
-  final _controller = GameController();
+  late final GameController _controller = GameController(widget.prefs);
   final _particles = ParticleController();
   final _shake = ShakeController();
 

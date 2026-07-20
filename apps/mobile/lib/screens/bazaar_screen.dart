@@ -11,6 +11,7 @@ import 'package:game_core/game_core.dart' as gc;
 import '../game_controller.dart';
 import '../theme.dart';
 import '../widgets/buttons.dart';
+import '../widgets/coach_panel.dart';
 
 class BazaarScreen extends StatelessWidget {
   const BazaarScreen({required this.controller, super.key});
@@ -22,6 +23,10 @@ class BazaarScreen extends StatelessWidget {
     final c = controller;
     final run = c.run!;
     final offers = c.offers ?? const <gc.Offer>[];
+    // Ranked once per build, then looked up per tile — rankOffers re-scores a benchmark
+    // panel per offer, so calling it inside the list builder would repeat that work.
+    final valuations = {for (final v in c.offerValuations) v.offer: v};
+    final bestBuy = c.offerValuations.isEmpty ? null : c.offerValuations.first.offer;
 
     return SafeArea(
       child: Padding(
@@ -32,6 +37,20 @@ class BazaarScreen extends StatelessWidget {
             Row(
               children: [
                 Text('THE BAZAAR', style: T.label),
+                const SizedBox(width: 10),
+                GestureDetector(
+                  onTap: c.toggleCoach,
+                  behavior: HitTestBehavior.opaque,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: c.coachOn ? T.brass.withValues(alpha: 0.18) : T.panel2,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: c.coachOn ? T.brass : T.line),
+                    ),
+                    child: Text('🧠', style: TextStyle(fontSize: 13, color: c.coachOn ? T.ink : T.dim)),
+                  ),
+                ),
                 const Spacer(),
                 Text('🪙 ${run.coins}', style: T.dish(22, color: T.brass)),
               ],
@@ -52,6 +71,8 @@ class BazaarScreen extends StatelessWidget {
                           ? 'No free slot'
                           : null,
                       onBuy: () => c.buy(o),
+                      valuation: valuations[o],
+                      isBestBuy: bestBuy == o,
                     ),
                   if (offers.isEmpty)
                     Padding(
@@ -108,6 +129,8 @@ class _OfferTile extends StatelessWidget {
     required this.affordable,
     required this.blockedReason,
     required this.onBuy,
+    this.valuation,
+    this.isBestBuy = false,
   });
 
   final gc.Offer offer;
@@ -115,10 +138,14 @@ class _OfferTile extends StatelessWidget {
   final String? blockedReason;
   final VoidCallback onBuy;
 
+  /// Non-null only while the Coach is on.
+  final gc.OfferValuation? valuation;
+  final bool isBestBuy;
+
   @override
   Widget build(BuildContext context) {
     final enabled = affordable && blockedReason == null;
-    final tint = T.rarityColor(offer.rarity);
+    final tint = isBestBuy ? T.brass : T.rarityColor(offer.rarity);
     return Opacity(
       opacity: enabled ? 1 : 0.45,
       child: GestureDetector(
@@ -131,7 +158,10 @@ class _OfferTile extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: tint, width: 1.5),
           ),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+          Row(
             children: [
               Container(
                 width: 40,
@@ -167,6 +197,10 @@ class _OfferTile extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Text('${offer.cost}🪙', style: T.dish(16, color: T.brass)),
+            ],
+          ),
+              if (valuation != null)
+                CoachBuyHint(valuation: valuation!, isBest: isBestBuy),
             ],
           ),
         ),

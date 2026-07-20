@@ -6,7 +6,9 @@
 /// parallel implementation that drifts (see CLAUDE.md). The constraint is
 /// enforced by `test/no_flutter_imports_test.dart`.
 ///
-/// Ported: §RNG, §CONTENT, §ENGINE, §PROGRESSION, §RUN — the whole pure core.
+/// Ported: §RNG, §CONTENT, §ENGINE, §PROGRESSION, §RUN — the whole pure core —
+/// plus the solver half of §UI's Coach (`src/coach.dart`), which drives that
+/// engine rather than shadowing it.
 /// The web build remains the behavioural reference — `test/vectors_test.dart`
 /// asserts scoring matches it case for case, and `test/runs_test.dart` replays
 /// whole scripted runs against traces recorded from it.
@@ -17,6 +19,7 @@
 library;
 
 export 'src/catalog.dart';
+export 'src/coach.dart';
 export 'src/engine.dart';
 export 'src/models.dart';
 export 'src/progression.dart';

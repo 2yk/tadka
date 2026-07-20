@@ -36,7 +36,12 @@ class PrefsProfileStore implements gc.ProfileStore {
 }
 
 class GameController extends ChangeNotifier {
-  GameController();
+  GameController([this._prefs]) {
+    coachOn = _prefs?.getBool(_coachKey) ?? false;
+  }
+
+  static const _coachKey = 'tadka_coach';
+  final SharedPreferences? _prefs;
 
   gc.RunState? run;
   Phase phase = Phase.start;
@@ -55,6 +60,10 @@ class GameController extends ChangeNotifier {
 
   String? errorMessage;
 
+  /// Coach visibility. Persisted, because it's a learning aid you leave on for a while and
+  /// having to re-enable it every launch is exactly the friction that stops people using it.
+  bool coachOn = false;
+
   // ---- start screen selections
   String deckId = 'home';
   int stake = 1;
@@ -66,6 +75,37 @@ class GameController extends ChangeNotifier {
     lastResult = null;
     errorMessage = null;
     _drainToasts();
+    notifyListeners();
+  }
+
+  /// Ranked legal dishes for the current hand, straight from the game_core solver.
+  /// Recomputed on demand rather than cached: it costs well under a frame (~0.6ms), and a
+  /// stale suggestion is a suggestion that lies.
+  List<gc.DishSuggestion> get suggestions {
+    final r = run;
+    if (r == null || !coachOn) return const [];
+    return gc.suggestDishes(r);
+  }
+
+  /// Bazaar offers ranked by real marginal value to this build; best buy first.
+  List<gc.OfferValuation> get offerValuations {
+    final r = run;
+    if (r == null || !coachOn || offers == null) return const [];
+    return gc.rankOffers(r, offers!);
+  }
+
+  void toggleCoach() {
+    coachOn = !coachOn;
+    unawaited(_prefs?.setBool(_coachKey, coachOn) ?? Future<bool>.value(false));
+    notifyListeners();
+  }
+
+  /// Replaces the selection with exactly the cards a Coach row describes.
+  void loadSuggestion(List<int> handIndexes) {
+    selected
+      ..clear()
+      ..addAll(handIndexes);
+    errorMessage = null;
     notifyListeners();
   }
 

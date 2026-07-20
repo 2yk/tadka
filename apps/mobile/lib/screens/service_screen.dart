@@ -11,6 +11,7 @@ import 'package:game_core/game_core.dart' as gc;
 import '../game_controller.dart';
 import '../theme.dart';
 import '../widgets/buttons.dart';
+import '../widgets/coach_panel.dart';
 import '../widgets/ingredient_card.dart';
 import '../widgets/juice.dart';
 
@@ -142,27 +143,50 @@ class _ServiceScreenState extends State<ServiceScreen> {
       padding: EdgeInsets.only(top: pad.top + 6, bottom: pad.bottom + 6, left: 12, right: 12),
       child: Column(
         children: [
-          _Header(run: run, city: city, palate: palate),
+          _Header(
+            run: run,
+            city: city,
+            palate: palate,
+            coachOn: c.coachOn,
+            onToggleCoach: () => setState(c.toggleCoach),
+          ),
           const SizedBox(height: 10),
           _ScoreBar(run: run),
           const SizedBox(height: 8),
           _UtensilRack(run: run),
           const SizedBox(height: 12),
           _RouteStrip(run: run),
-          // Everything below is anchored to the thumb zone; the gap above is the "stage" the
-          // dish resolves into, and is intentional per the layout brief.
-          const Spacer(),
-          KeyedSubtree(
-            key: _panelKey,
-            child: _toast != null
-                ? _DishToast(result: _toast!, cityId: city.id)
-                : _PreviewBar(
-                    preview: preview,
-                    blocker: c.selected.isEmpty ? null : c.cookBlocker,
-                    error: c.errorMessage,
-                  ),
+          // The stage. Empty by design while playing unaided; the Coach fills it when on,
+          // which is why the toggle costs no layout anywhere else.
+          Expanded(
+            child: (c.coachOn && _toast == null)
+                ? Padding(
+                    padding: const EdgeInsets.only(top: 10),
+                    child: CoachPanel(
+                      run: run,
+                      suggestions: c.suggestions,
+                      selected: c.selected,
+                      onLoad: (idxs) => setState(() => c.loadSuggestion(idxs)),
+                    ),
+                  )
+                : const SizedBox.shrink(),
           ),
-          const SizedBox(height: 10),
+          // With the Coach up and nothing chosen yet, the empty "Tap 1-5 ingredients" panel
+          // is pure redundancy — the Coach is already telling you what to play — and it was
+          // stealing the rows the Coach needs. Give the space back.
+          if (!(c.coachOn && _toast == null && c.selected.isEmpty && c.errorMessage == null))
+            KeyedSubtree(
+              key: _panelKey,
+              child: _toast != null
+                  ? _DishToast(result: _toast!, cityId: city.id)
+                  : _PreviewBar(
+                      preview: preview,
+                      blocker: c.selected.isEmpty ? null : c.cookBlocker,
+                      error: c.errorMessage,
+                    ),
+            ),
+          if (!(c.coachOn && _toast == null && c.selected.isEmpty && c.errorMessage == null))
+            const SizedBox(height: 10),
           _Hand(
             run: run,
             selected: c.selected,
@@ -186,11 +210,19 @@ class _ServiceScreenState extends State<ServiceScreen> {
 }
 
 class _Header extends StatelessWidget {
-  const _Header({required this.run, required this.city, required this.palate});
+  const _Header({
+    required this.run,
+    required this.city,
+    required this.palate,
+    required this.coachOn,
+    required this.onToggleCoach,
+  });
 
   final gc.RunState run;
   final gc.City city;
   final gc.Palate? palate;
+  final bool coachOn;
+  final VoidCallback onToggleCoach;
 
   @override
   Widget build(BuildContext context) {
@@ -205,7 +237,7 @@ class _Header extends StatelessWidget {
               child: Text(city.name, style: T.dish(24), maxLines: 1, overflow: TextOverflow.ellipsis),
             ),
             Text('🪙 ${run.coins}', style: T.dish(18, color: T.brass)),
-            const SizedBox(width: 10),
+            const SizedBox(width: 8),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
               decoration: BoxDecoration(
@@ -214,6 +246,21 @@ class _Header extends StatelessWidget {
                 border: Border.all(color: T.line),
               ),
               child: Text('Lv ${run.kitchenLevel}', style: T.label.copyWith(color: T.ink)),
+            ),
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: onToggleCoach,
+              behavior: HitTestBehavior.opaque,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 160),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: coachOn ? T.brass.withValues(alpha: 0.18) : T.panel2,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: coachOn ? T.brass : T.line, width: coachOn ? 1.5 : 1),
+                ),
+                child: Text('🧠', style: TextStyle(fontSize: 15, color: coachOn ? T.ink : T.dim)),
+              ),
             ),
           ],
         ),
@@ -420,7 +467,10 @@ class _PreviewBar extends StatelessWidget {
           Text(gc.kGenericNames[p.pattern] ?? p.pattern, style: T.dish(17)),
           const SizedBox(height: 3),
           Text(
-            '${formatScore(p.flavor.round())} flavor × ${_trim(p.heat)} heat',
+            // Show the real value, not a rounded one. Palates give fractional flavour
+            // (+50% of a rank-5 Sour is 2.5), and rounding 12.5 up to "13" while the engine
+            // floors 12.5 x 1 to 12 makes the game look like it cannot add up.
+            '${_trim(p.flavor)} flavor × ${_trim(p.heat)} heat',
             style: T.bodyDim.copyWith(fontSize: 12),
           ),
           const SizedBox(height: 2),
