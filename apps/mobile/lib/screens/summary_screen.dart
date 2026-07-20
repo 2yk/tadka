@@ -116,7 +116,20 @@ class SummaryScreen extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 10),
+            if (won) ...[
+              PressableButton(
+                onTap: c.continueEndless,
+                child: const Text('CONTINUE THE ROUTE →',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, letterSpacing: 1)),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Targets keep compounding. The run ends when you miss one.',
+                textAlign: TextAlign.center,
+                style: T.bodyDim.copyWith(fontSize: 11.5),
+              ),
+              const SizedBox(height: 10),
+            ],
             Row(
               children: [
                 Expanded(

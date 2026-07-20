@@ -149,6 +149,7 @@ class _ServiceScreenState extends State<ServiceScreen> {
             palate: palate,
             coachOn: c.coachOn,
             onToggleCoach: () => setState(c.toggleCoach),
+            onHelp: c.openHelp,
           ),
           const SizedBox(height: 10),
           _ScoreBar(run: run),
@@ -228,6 +229,7 @@ class _Header extends StatelessWidget {
     required this.palate,
     required this.coachOn,
     required this.onToggleCoach,
+    required this.onHelp,
   });
 
   final gc.RunState run;
@@ -235,6 +237,7 @@ class _Header extends StatelessWidget {
   final gc.Palate? palate;
   final bool coachOn;
   final VoidCallback onToggleCoach;
+  final VoidCallback onHelp;
 
   @override
   Widget build(BuildContext context) {
@@ -272,6 +275,20 @@ class _Header extends StatelessWidget {
                   border: Border.all(color: coachOn ? T.brass : T.line, width: coachOn ? 1.5 : 1),
                 ),
                 child: Text('🧠', style: TextStyle(fontSize: 15, color: coachOn ? T.ink : T.dim)),
+              ),
+            ),
+            const SizedBox(width: 6),
+            GestureDetector(
+              onTap: onHelp,
+              behavior: HitTestBehavior.opaque,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                decoration: BoxDecoration(
+                  color: T.panel2,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: T.line),
+                ),
+                child: Text('?', style: T.label.copyWith(fontSize: 14, color: T.dim)),
               ),
             ),
           ],

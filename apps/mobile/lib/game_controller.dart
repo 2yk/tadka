@@ -12,7 +12,7 @@ import 'package:game_core/game_core.dart' as gc;
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Which screen the run is currently sitting on.
-enum Phase { start, service, bazaar, summary, victory, recipeBook }
+enum Phase { start, service, bazaar, summary, victory, recipeBook, help }
 
 /// Persists the meta-save through `shared_preferences`, keeping `game_core` Flutter-free.
 ///
@@ -41,6 +41,7 @@ class GameController extends ChangeNotifier {
   }
 
   static const _coachKey = 'tadka_coach';
+  static const _seenHelpKey = 'tadka_seen_help';
   final SharedPreferences? _prefs;
 
   gc.RunState? run;
@@ -70,11 +71,19 @@ class GameController extends ChangeNotifier {
 
   void startRun(String seed) {
     run = gc.newRun(seed: seed, stake: stake, deckId: deckId);
+    final needsRules = !_seenHelp;
     phase = Phase.service;
     selected.clear();
     lastResult = null;
     errorMessage = null;
     _drainToasts();
+    // A first-time player should meet the rules before the first hand, not after losing to
+    // them. Shown once ever; the ? button is always there afterwards.
+    if (needsRules) {
+      _bookReturn = Phase.service;
+      openHelp();
+      return;
+    }
     notifyListeners();
   }
 
@@ -266,6 +275,21 @@ class GameController extends ChangeNotifier {
   /// Where to return to when the Recipe Book closes — it's reachable from more than one screen.
   Phase _bookReturn = Phase.start;
 
+  /// Whether How to Play has ever been shown. Persisted so it interrupts exactly once.
+  bool get _seenHelp => _prefs?.getBool(_seenHelpKey) ?? false;
+
+  void openHelp() {
+    _bookReturn = phase == Phase.help ? _bookReturn : phase;
+    phase = Phase.help;
+    unawaited(_prefs?.setBool(_seenHelpKey, true) ?? Future<bool>.value(false));
+    notifyListeners();
+  }
+
+  void closeHelp() {
+    phase = _bookReturn;
+    notifyListeners();
+  }
+
   void openRecipeBook() {
     _bookReturn = phase;
     phase = Phase.recipeBook;
@@ -274,6 +298,19 @@ class GameController extends ChangeNotifier {
 
   void closeRecipeBook() {
     phase = _bookReturn;
+    notifyListeners();
+  }
+
+  /// Post-victory: keep going into the Long Route. Targets compound per city and the run
+  /// only ends when you miss one — this is the leaderboard endgame.
+  void continueEndless() {
+    final r = run!;
+    r.status = 'playing';
+    gc.startEndlessCity(r, r.endlessCity + 1);
+    phase = Phase.service;
+    selected.clear();
+    lastResult = null;
+    _drainToasts();
     notifyListeners();
   }
 
