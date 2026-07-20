@@ -114,6 +114,8 @@ class Critic {
     this.minCards,
     this.debuff,
     this.requireFamily,
+    this.minor = false,
+    this.legend = false,
   });
 
   final String id;
@@ -127,6 +129,53 @@ class Critic {
   /// The Traditionalist: this family contributes 0 intensity and no palate bonus.
   final String? debuff;
   final String? requireFamily;
+
+  /// Drawn from the milder Dinner Rush pool that Habanero (stake 6) switches on.
+  final bool minor;
+
+  /// Produced by `mergeCritics` on the Long Route: two demands at once.
+  final bool legend;
+}
+
+/// A spice blend — a one-shot consumable bought at the bazaar and played from the hand.
+///
+/// The blends themselves are applied by the UI layer (they mutate held cards); `game_core`
+/// only owns the inventory, which is why this type carries no behaviour.
+class Blend {
+  const Blend({
+    required this.id,
+    required this.name,
+    required this.cost,
+    required this.select,
+    required this.desc,
+  });
+
+  final String id;
+  final String name;
+  final int cost;
+
+  /// How many held cards the blend targets. 0 = no selection (Mise en Place).
+  final int select;
+  final String desc;
+}
+
+/// A Festival Card — the planet-analog. Buying one raises the run's Kitchen level, which
+/// levels every recipe's base flavour and heat. See [kLevelBonus]: this is the scaling engine.
+class Festival {
+  const Festival({
+    required this.id,
+    required this.pattern,
+    required this.name,
+    required this.cost,
+  });
+
+  final String id;
+
+  /// The recipe this festival is themed on. M0 levels the whole Kitchen rather than the
+  /// single pattern, so this is presentational — kept because v1.0 splits them apart.
+  final String pattern;
+  final String name;
+  final int cost;
 }
 
 /// One line of the scoring breakdown, for the count-up UI and the Coach.

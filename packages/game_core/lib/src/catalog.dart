@@ -195,6 +195,31 @@ final Map<String, Utensil> kUtensilById = {for (final u in kUtensils) u.id: u};
 
 const List<(String, num)> kRarityWeights = [('common', 60), ('uncommon', 30), ('rare', 10)];
 
+/// The 6 spice blends (consumables). A run holds at most 3.
+const List<Blend> kBlends = [
+  Blend(id: 'chili_oil', name: 'Chili Oil', cost: 3, select: 2, desc: 'Turn up to 2 selected ingredients Spicy 🌶️'),
+  Blend(id: 'sea_salt', name: 'Sea Salt', cost: 3, select: 2, desc: 'Turn up to 2 selected ingredients Salty 🧂'),
+  Blend(id: 'fermentation', name: 'Fermentation', cost: 3, select: 1, desc: '+3 intensity to 1 selected ingredient'),
+  Blend(id: 'sun_dry', name: 'Sun-Dry', cost: 3, select: 1, desc: 'Duplicate 1 selected ingredient into your hand'),
+  Blend(id: 'sharpen', name: 'Whetstone', cost: 4, select: 1, desc: 'Set 1 selected ingredient to intensity 10'),
+  Blend(id: 'mise', name: 'Mise en Place', cost: 3, select: 0, desc: 'Draw 2 extra ingredients this turn'),
+];
+
+final Map<String, Blend> kBlendById = {for (final b in kBlends) b.id: b};
+
+/// Festival Cards — each purchase is a permanent Kitchen level for the run.
+const List<Festival> kFestivals = [
+  Festival(id: 'fest_pair', pattern: 'pair', name: 'Sankranti', cost: 3),
+  Festival(id: 'fest_three', pattern: 'three_kind', name: 'Onam', cost: 3),
+  Festival(id: 'fest_straight', pattern: 'straight', name: 'Baisakhi', cost: 3),
+  Festival(id: 'fest_flush', pattern: 'flush', name: 'Holi', cost: 3),
+  Festival(id: 'fest_full', pattern: 'full_house', name: 'Diwali', cost: 3),
+  Festival(id: 'fest_four', pattern: 'four_kind', name: 'Pongal', cost: 4),
+  Festival(id: 'fest_sflush', pattern: 'straight_flush', name: 'Kumbh Mela', cost: 4),
+];
+
+final Map<String, Festival> kFestivalById = {for (final f in kFestivals) f.id: f};
+
 /// City palates (build spec §7).
 const Map<String, Palate> kPalates = {
   'kochi': Palate(
@@ -233,15 +258,31 @@ const Map<String, Critic> kCritics = {
 };
 
 /// A city on the route.
+///
+/// Long Route (endless) cities are built at runtime by `startEndlessCity` rather than
+/// declared here: they carry a rolled — sometimes merged — [criticObj] instead of naming
+/// one from [kCritics], which is why [critic] is optional.
 class City {
-  const City({required this.id, required this.name, required this.targets, required this.critic});
+  const City({
+    required this.id,
+    required this.name,
+    required this.targets,
+    this.critic = '',
+    this.criticObj,
+  });
 
   final String id;
   final String name;
 
   /// Lunch / Dinner / Critic score targets.
   final List<int> targets;
+
+  /// Key into [kCritics] for the finale service. `'random'` resolves against the run's
+  /// pre-rolled `naplesCritic`. Empty on Long Route cities.
   final String critic;
+
+  /// Long Route only: the critic instance for this city's finale service.
+  final Critic? criticObj;
 }
 
 /// The 3-city M0 mini-run. Naples' finale critic is fixed to the Traditionalist on purpose:
