@@ -35,7 +35,7 @@ const Set<String> _conditionKeys = {
 
 const Set<String> _effectKeys = {
   'flavor_add', 'heat_add', 'heat_mult', 'flavor_per_card', 'heat_per_card',
-  'coin_add', 'retrigger_highest', 'copy_right',
+  'coin_add', 'retrigger_highest', 'copy_right', 'flavor_mult',
 };
 
 /// Condition keys whose value names a flavour family.
@@ -52,8 +52,7 @@ const Set<String> _flagValued = {'all_cards_same_family', 'is_first_dish', 'is_l
 
 /// Effect keys carrying a magnitude, as opposed to the two flag effects.
 const Set<String> _numericEffects = {
-  'flavor_add', 'heat_add', 'heat_mult', 'flavor_per_card', 'heat_per_card', 'coin_add',
-};
+  'flavor_add', 'heat_add', 'heat_mult', 'flavor_per_card', 'heat_per_card', 'coin_add', 'flavor_mult'};
 
 const Map<String, int> _costByRarity = {'common': 4, 'uncommon': 6, 'rare': 9};
 
@@ -139,6 +138,9 @@ ScoreResult _score(_Dish d, List<String> utensils) => scoreDish(
   if (flavorPer != null) flavor += flavorPer * cardCount;
   final heatPer = effect['heat_per_card'] as num?;
   if (heatPer != null) heat += heatPer * cardCount;
+  // Multiplicative terms land after every additive one, matching scoreDish.
+  final flavorMult = effect['flavor_mult'] as num?;
+  if (flavorMult != null) flavor *= flavorMult;
   final heatMult = effect['heat_mult'] as num?;
   if (heatMult != null) heat *= heatMult;
   return (flavor: flavor, heat: heat, coins: ((effect['coin_add'] as num?) ?? 0).toInt());
@@ -352,6 +354,11 @@ void main() {
     _Gate('maple_evaporator',
         hit: _Dish(_threeKind), misses: [_Dish(_threeKindNoSweet), _Dish(_pair)]),
     _Gate('asado_cross', hit: _Dish(_straightFlush), misses: [_Dish(_flush)]),
+    // flavour multipliers
+    _Gate('copper_degchi', hit: _Dish(_four3Salty), misses: [_Dish(_pair)]),
+    _Gate('clay_tandir', hit: _Dish(_flush), misses: [_Dish(_pair)]),
+    _Gate('stone_mortar', hit: _Dish(_one), misses: [_Dish(_pair)]),
+    _Gate('harvest_basket', hit: _Dish(_fullHouse), misses: [_Dish(_flush)]),
   ];
 
   group('expansion utensils fire on their gate and only on their gate', () {
@@ -435,15 +442,39 @@ void main() {
       }
     });
 
-    test('conditional retriggers do not exist', () {
-      // The retrigger pass in `scoreDish` runs before the effect loop and does NOT consult
-      // `_condMet`, so a conditional retrigger would fire on every dish and its shop text
-      // would be a lie. Keep them unconditional until the engine gains that check.
+    test('a retrigger obeys its condition', () {
+      // The retrigger pass used to skip _condMet, so a conditional retrigger fired on every
+      // dish and its shop text was a lie. It never surfaced because Pressure Cooker is
+      // unconditional — which is exactly why this is asserted behaviourally now rather than
+      // left as a rule about what content may not do.
+      const gated = Utensil(
+        id: '_test_gated_retrigger', name: 'Gated', rarity: 'rare', cost: 9,
+        trigger: 'on_card', condition: {'pattern_is': 'flush'},
+        effect: {'retrigger_highest': true}, text: 'test',
+      );
+      final flush = [
+        for (final r in [2, 4, 6, 8, 10])
+          Card(id: 'spicy_$r', family: 'spicy', rank: r, display: 'x'),
+      ];
+      final pair = [
+        const Card(id: 'spicy_3', family: 'spicy', rank: 3, display: 'x'),
+        const Card(id: 'sweet_3', family: 'sweet', rank: 3, display: 'x'),
+      ];
+
+      double flavorWith(List<Card> cards, List<Utensil> rack) =>
+          scoreDish(cards, ScoreContext(utensils: rack)).flavor;
+
+      expect(flavorWith(flush, const [gated]) - flavorWith(flush, const []), 10,
+          reason: 'condition met: the highest card (rank 10) scores twice');
+      expect(flavorWith(pair, const [gated]) - flavorWith(pair, const []), 0,
+          reason: 'condition unmet: it must not fire at all');
+    });
+
+    test('extra effects alongside a retrigger are still skipped by the engine', () {
       for (final u in kUtensils) {
         if (u.effect['retrigger_highest'] != true) continue;
-        expect(u.condition, isNull, reason: '${u.id}: a conditional retrigger fires regardless');
         expect(u.effect.keys.toList(), equals(['retrigger_highest']),
-            reason: '${u.id}: extra effects alongside a retrigger are skipped by the engine');
+            reason: '${u.id}: the engine ignores other effects on a retrigger utensil');
       }
     });
 

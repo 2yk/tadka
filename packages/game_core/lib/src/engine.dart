@@ -222,6 +222,11 @@ ScoreResult scoreDish(List<Card> playedCards, ScoreContext ctx) {
     for (var i = 0; i < ctx.utensils.length; i++) {
       final eff = _resolveSlot(ctx.utensils, i);
       if (eff == null || eff.effect['retrigger_highest'] != true) continue;
+      // Conditions apply here too. This pass used to skip _condMet entirely, which never
+      // mattered because Pressure Cooker is unconditional — but a conditional retrigger
+      // would have fired on every dish and its shop text would have been a lie. Verified a
+      // strict no-op against every existing vector before the change.
+      if (!_condMet(eff.condition, playedCards, pattern, ctx)) continue;
       final c = cardContribution(hi, ctx);
       flavor += c.dF;
       heat += c.dH;
@@ -250,11 +255,16 @@ ScoreResult scoreDish(List<Card> playedCards, ScoreContext ctx) {
     if (heatPer != null && heatPer != 0) heat += heatPer * playedCards.length;
     final coinAdd = e['coin_add'] as num?;
     if (coinAdd != null && coinAdd != 0) coins += coinAdd.toInt();
+    // Multiplicative terms land after every additive one in this slot, matching heat.
+    final flavorMult = e['flavor_mult'] as num?;
+    if (flavorMult != null && flavorMult != 0) flavor *= flavorMult;
     final heatMult = e['heat_mult'] as num?;
     if (heatMult != null && heatMult != 0) heat *= heatMult;
 
     final parts = <String>[];
-    if (flavor != beforeF) {
+    if (flavorMult != null && flavorMult != 0) {
+      parts.add('×${_num(flavorMult)} flavor');
+    } else if (flavor != beforeF) {
       parts.add('${flavor > beforeF ? '+' : ''}${_num(_round1(flavor - beforeF))} flavor');
     }
     if (heatMult != null && heatMult != 0) {
@@ -263,8 +273,8 @@ ScoreResult scoreDish(List<Card> playedCards, ScoreContext ctx) {
       parts.add('+${_num(_round1(heat - beforeH))} heat');
     }
     if (coinAdd != null && coinAdd != 0) parts.add('+${_num(coinAdd)}🪙');
-    log('${eff.name}: ${parts.isEmpty ? '—' : parts.join(', ')}',
-        heatMult != null && heatMult != 0 ? 'mult' : 'plus');
+    final isMult = (heatMult != null && heatMult != 0) || (flavorMult != null && flavorMult != 0);
+    log('${eff.name}: ${parts.isEmpty ? '—' : parts.join(', ')}', isMult ? 'mult' : 'plus');
   }
 
   final score = (flavor * heat).floor();

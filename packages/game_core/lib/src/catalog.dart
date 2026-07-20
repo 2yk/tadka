@@ -271,6 +271,15 @@ const List<Utensil> kUtensils = [
   Utensil(id: 'kazan', name: 'Kazan', rarity: 'rare', cost: 9, trigger: 'on_dish', condition: {'min_cards': 4}, effect: {'heat_per_card': 2}, text: '+2 heat per ingredient if the dish has 4+ ingredients'),
   Utensil(id: 'maple_evaporator', name: 'Maple Evaporator', rarity: 'rare', cost: 9, trigger: 'on_dish', condition: {'contains_family': 'sweet', 'pattern_at_least': 'three_kind'}, effect: {'heat_mult': 2}, text: '×2 heat on Three of a Kind or better containing a Sweet ingredient'),
   Utensil(id: 'asado_cross', name: 'Asado Cross', rarity: 'rare', cost: 9, trigger: 'on_dish', condition: {'pattern_at_least': 'straight_flush'}, effect: {'flavor_add': 150, 'heat_add': 12}, text: 'Straight Flush or better gets +150 flavor and +12 heat'),
+  // --- flavour multipliers -------------------------------------------------------------
+  // Heat was the only multiplicative axis in the game, which is why additive-flavour commons
+  // go dead once Kitchen level inflates the base. These give flavour builds a way to scale
+  // too, so "stack flavour" becomes a real strategy rather than an early-run stopgap.
+  // Rare-only and gated: a flavour multiplier compounds with the heat ones.
+  Utensil(id: 'copper_degchi', name: 'Copper Degchi', rarity: 'rare', cost: 9, trigger: 'on_dish', condition: {'min_cards': 4}, effect: {'flavor_mult': 1.5}, text: '×1.5 flavor if the dish has 4+ ingredients'),
+  Utensil(id: 'clay_tandir', name: 'Clay Tandır', rarity: 'rare', cost: 9, trigger: 'on_dish', condition: {'all_cards_same_family': true}, effect: {'flavor_mult': 2}, text: '×2 flavor if every ingredient shares a family'),
+  Utensil(id: 'stone_mortar', name: 'Stone Mortar', rarity: 'rare', cost: 9, trigger: 'on_dish', condition: {'num_cards': 1}, effect: {'flavor_mult': 3}, text: '×3 flavor on a single-ingredient dish'),
+  Utensil(id: 'harvest_basket', name: 'Harvest Basket', rarity: 'rare', cost: 9, trigger: 'on_dish', condition: {'pattern_at_least': 'full_house'}, effect: {'flavor_mult': 1.75}, text: '×1.75 flavor if the recipe is Full House or better'),
 ];
 
 final Map<String, Utensil> kUtensilById = {for (final u in kUtensils) u.id: u};

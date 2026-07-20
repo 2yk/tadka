@@ -48,6 +48,8 @@ const Map<String, int> _value = {
   'mangal_grill': 42, 'billig': 68, 'tagine': 62, 'hawker_stall': 24,
   // expansion — rares
   'yanagiba': 25, 'kazan': 95, 'maple_evaporator': 88, 'asado_cross': 45,
+  // flavour multipliers — the second scaling axis, so rated high
+  'copper_degchi': 92, 'clay_tandir': 86, 'stone_mortar': 30, 'harvest_basket': 72,
 };
 int _uval(String id) => _value[id] ?? 40;
 
