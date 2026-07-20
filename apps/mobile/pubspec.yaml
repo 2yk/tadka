@@ -25,6 +25,7 @@ dependencies:
     path: ../../packages/game_core
   content:
     path: ../../packages/content
+  shared_preferences: ^2.5.5
 
 dev_dependencies:
   flutter_test:

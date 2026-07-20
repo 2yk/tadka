@@ -1,0 +1,223 @@
+/// Bridges the pure `game_core` run state to the Flutter widget tree.
+///
+/// Deliberately thin: it owns no rules. Every decision — legality, scoring, economy, offers —
+/// is delegated to `game_core`, exactly as the web build's Coach drives the live engine rather
+/// than reimplementing it. A parallel implementation that drifts is worse than none.
+library;
+
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
+import 'package:game_core/game_core.dart' as gc;
+import 'package:shared_preferences/shared_preferences.dart';
+
+/// Which screen the run is currently sitting on.
+enum Phase { start, service, bazaar, summary, victory }
+
+/// Persists the meta-save through `shared_preferences`, keeping `game_core` Flutter-free.
+///
+/// Writes are fire-and-forget against an in-memory mirror so `saveProfile()` can stay
+/// synchronous, matching the web build's write-through `localStorage` behaviour.
+class PrefsProfileStore implements gc.ProfileStore {
+  PrefsProfileStore(this._prefs) : _cache = _prefs.getString(_key);
+
+  static const _key = 'tadka_profile_v1';
+  final SharedPreferences _prefs;
+  String? _cache;
+
+  @override
+  String? read() => _cache;
+
+  @override
+  void write(String json) {
+    _cache = json;
+    unawaited(_prefs.setString(_key, json));
+  }
+}
+
+class GameController extends ChangeNotifier {
+  GameController();
+
+  gc.RunState? run;
+  Phase phase = Phase.start;
+
+  /// Indices into `run.hand` the player has tapped.
+  final List<int> selected = [];
+
+  /// Offers on the current bazaar screen; null until rolled.
+  List<gc.Offer>? offers;
+
+  /// The most recent cook, so the service screen can animate it.
+  gc.ScoreResult? lastResult;
+
+  /// Unlock toasts drained from the achievement bus.
+  final List<String> toasts = [];
+
+  String? errorMessage;
+
+  // ---- start screen selections
+  String deckId = 'home';
+  int stake = 1;
+
+  void startRun(String seed) {
+    run = gc.newRun(seed: seed, stake: stake, deckId: deckId);
+    phase = Phase.service;
+    selected.clear();
+    lastResult = null;
+    errorMessage = null;
+    _drainToasts();
+    notifyListeners();
+  }
+
+  void toggleCard(int index) {
+    if (selected.contains(index)) {
+      selected.remove(index);
+    } else {
+      if (selected.length >= 5) return;
+      selected.add(index);
+    }
+    errorMessage = null;
+    notifyListeners();
+  }
+
+  /// Live preview of the currently selected dish, or null if nothing is selected.
+  /// Uses the real `scoreDish`, so the number shown is exactly what will be scored.
+  gc.ScoreResult? get preview {
+    final r = run;
+    if (r == null || selected.isEmpty) return null;
+    final cards = selected.map((i) => r.hand[i]).toList();
+    if (gc.dishError(cards, r.critic) != null) return null;
+    return gc.scoreDish(cards, gc.ctxFor(r));
+  }
+
+  /// Why COOK is disabled, or null when the dish is legal.
+  String? get cookBlocker {
+    final r = run;
+    if (r == null) return null;
+    return gc.dishError(selected.map((i) => r.hand[i]).toList(), r.critic);
+  }
+
+  /// Commits a cook. Returns the outcome so the screen can sequence its animation before
+  /// advancing; state changes that affect layout are notified immediately.
+  gc.CookOutcome? cook() {
+    final r = run;
+    if (r == null || selected.isEmpty) return null;
+    final idxs = List<int>.of(selected)..sort();
+    final out = gc.doCook(r, idxs);
+    if (out.error != null) {
+      errorMessage = out.error;
+      notifyListeners();
+      return out;
+    }
+    lastResult = out.result;
+    selected.clear();
+    _drainToasts();
+    notifyListeners();
+    return out;
+  }
+
+  void swap() {
+    final r = run;
+    if (r == null || selected.isEmpty) return;
+    final out = gc.doSwap(r, List<int>.of(selected)..sort());
+    if (out.error != null) {
+      errorMessage = out.error;
+    } else {
+      selected.clear();
+      errorMessage = null;
+    }
+    notifyListeners();
+  }
+
+  /// Service cleared: bank the economy, then either finish the run or open the bazaar.
+  void afterServiceWon() {
+    final r = run!;
+    final wasBoss = r.serviceIndex == 2;
+    gc.bankService(r);
+    if (wasBoss) r.kitchenLevel += 3;
+    if (gc.isFinalService(r)) {
+      gc.onRunWon(r);
+      r.status = 'won';
+      phase = Phase.victory;
+    } else {
+      offers = gc.rollOffers(r);
+      phase = Phase.bazaar;
+    }
+    _drainToasts();
+    notifyListeners();
+  }
+
+  void afterServiceLost() {
+    gc.recordLoss(run!);
+    phase = Phase.summary;
+    _drainToasts();
+    notifyListeners();
+  }
+
+  void buy(gc.Offer offer) {
+    final r = run!;
+    if (r.coins < offer.cost) return;
+    switch (offer.kind) {
+      case 'utensil':
+        if (r.utensils.length >= r.utensilSlots) return;
+        r.utensils.add(gc.kUtensilById[offer.id]!);
+      case 'festival':
+        r.kitchenLevel++;
+      case 'blend':
+        r.blends.add(gc.kBlendById[offer.id]!);
+    }
+    r.coins -= offer.cost;
+    offers!.remove(offer);
+    _drainToasts();
+    notifyListeners();
+  }
+
+  static const rerollCost = 2;
+
+  void reroll() {
+    final r = run!;
+    if (r.coins < rerollCost) return;
+    r.coins -= rerollCost;
+    r.rerolls++;
+    offers = gc.rollOffers(r);
+    notifyListeners();
+  }
+
+  void sellUtensil(int index) {
+    final r = run!;
+    final u = r.utensils[index];
+    r.coins += (u.cost / 2).floor();
+    r.utensils.removeAt(index);
+    notifyListeners();
+  }
+
+  void nextService() {
+    gc.advance(run!);
+    if (run!.status == 'won') {
+      phase = Phase.victory;
+    } else {
+      phase = Phase.service;
+      selected.clear();
+      lastResult = null;
+    }
+    notifyListeners();
+  }
+
+  void backToStart() {
+    run = null;
+    offers = null;
+    lastResult = null;
+    selected.clear();
+    phase = Phase.start;
+    notifyListeners();
+  }
+
+  void dismissToast() {
+    if (toasts.isNotEmpty) {
+      toasts.removeAt(0);
+      notifyListeners();
+    }
+  }
+
+  void _drainToasts() => toasts.addAll(gc.drainUnlockQueue());
+}

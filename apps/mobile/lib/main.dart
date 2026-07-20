@@ -1,122 +1,153 @@
+/// Spice Route — M1 Flutter shell.
+///
+/// All rules live in `package:game_core`; this app is presentation only.
+library;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:game_core/game_core.dart' as gc;
+import 'package:shared_preferences/shared_preferences.dart';
 
-void main() {
-  runApp(const MyApp());
+import 'game_controller.dart';
+import 'screens/bazaar_screen.dart';
+import 'screens/service_screen.dart';
+import 'screens/start_screen.dart';
+import 'screens/summary_screen.dart';
+import 'theme.dart';
+import 'widgets/juice.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+  ]);
+  // Inject persistence before the profile is first read, so unlocks survive a relaunch.
+  final prefs = await SharedPreferences.getInstance();
+  gc.profileStore = PrefsProfileStore(prefs);
+  gc.reloadProfile();
+  runApp(const TadkaApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class TadkaApp extends StatelessWidget {
+  const TadkaApp({super.key});
 
-  // This widget is the root of your application.
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
-      ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
-    );
+  Widget build(BuildContext context) => MaterialApp(
+    title: 'Spice Route',
+    debugShowCheckedModeBanner: false,
+    theme: T.theme(),
+    home: const GameRoot(),
+  );
+}
+
+class GameRoot extends StatefulWidget {
+  const GameRoot({super.key});
+
+  @override
+  State<GameRoot> createState() => _GameRootState();
+}
+
+class _GameRootState extends State<GameRoot> {
+  final _controller = GameController();
+  final _particles = ParticleController();
+  final _shake = ShakeController();
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_onChange);
   }
-}
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
+  void _onChange() => setState(() {});
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
-}
-
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
-
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
-    });
+  void dispose() {
+    _controller.removeListener(_onChange);
+    _controller.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
+    final c = _controller;
+    final Widget screen = switch (c.phase) {
+      Phase.start => StartScreen(controller: c),
+      Phase.service => ServiceScreen(controller: c, particles: _particles, shake: _shake),
+      Phase.bazaar => BazaarScreen(controller: c),
+      Phase.summary || Phase.victory => SummaryScreen(controller: c),
+    };
+
     return Scaffold(
-      appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: .center,
-          children: [
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-          ],
+      backgroundColor: T.bg,
+      body: ParticleField(
+        controller: _particles,
+        child: ShakeBox(
+          controller: _shake,
+          child: Stack(
+            children: [
+              AnimatedSwitcher(
+                duration: Motion.screenFade,
+                switchInCurve: Curves.easeOut,
+                switchOutCurve: Curves.easeIn,
+                transitionBuilder: (child, anim) => FadeTransition(
+                  opacity: anim,
+                  child: SlideTransition(
+                    position: Tween(begin: const Offset(0, 0.03), end: Offset.zero).animate(anim),
+                    child: child,
+                  ),
+                ),
+                child: KeyedSubtree(key: ValueKey(c.phase), child: screen),
+              ),
+              if (c.toasts.isNotEmpty)
+                _UnlockToast(message: c.toasts.first, onDismiss: c.dismissToast),
+            ],
+          ),
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ),
     );
   }
+}
+
+/// Achievement / unlock banner. Unlocks are permanent and never lost on death, so this is the
+/// one moment of progress a losing run still delivers — worth surfacing prominently.
+class _UnlockToast extends StatelessWidget {
+  const _UnlockToast({required this.message, required this.onDismiss});
+
+  final String message;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) => Positioned(
+    top: MediaQuery.paddingOf(context).top + 8,
+    left: 16,
+    right: 16,
+    child: GestureDetector(
+      onTap: onDismiss,
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0, end: 1),
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOut,
+        builder: (context, t, child) => Opacity(
+          opacity: t,
+          child: Transform.translate(offset: Offset(0, -12 * (1 - t)), child: child),
+        ),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+          decoration: BoxDecoration(
+            color: T.panel2,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: T.brass, width: 1.5),
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.5), blurRadius: 14)],
+          ),
+          child: Row(
+            children: [
+              Expanded(child: Text(message, style: T.body.copyWith(fontWeight: FontWeight.w600))),
+              const Icon(Icons.close, size: 16, color: T.dim),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
 }
