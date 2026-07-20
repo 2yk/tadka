@@ -12,7 +12,7 @@ import 'package:game_core/game_core.dart' as gc;
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Which screen the run is currently sitting on.
-enum Phase { start, service, bazaar, summary, victory }
+enum Phase { start, service, bazaar, summary, victory, recipeBook }
 
 /// Persists the meta-save through `shared_preferences`, keeping `game_core` Flutter-free.
 ///
@@ -240,6 +240,20 @@ class GameController extends ChangeNotifier {
       selected.clear();
       lastResult = null;
     }
+    notifyListeners();
+  }
+
+  /// Where to return to when the Recipe Book closes — it's reachable from more than one screen.
+  Phase _bookReturn = Phase.start;
+
+  void openRecipeBook() {
+    _bookReturn = phase;
+    phase = Phase.recipeBook;
+    notifyListeners();
+  }
+
+  void closeRecipeBook() {
+    phase = _bookReturn;
     notifyListeners();
   }
 

@@ -110,7 +110,22 @@ class _StartScreenState extends State<StartScreen> {
               );
             }),
 
-            const SizedBox(height: 26),
+            const SizedBox(height: 22),
+            GestureDetector(
+              onTap: c.openRecipeBook,
+              behavior: HitTestBehavior.opaque,
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 11),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: T.panel,
+                  borderRadius: BorderRadius.circular(9),
+                  border: Border.all(color: T.line),
+                ),
+                child: Text('📖  RECIPE BOOK', style: T.label.copyWith(color: T.ink)),
+              ),
+            ),
+            const SizedBox(height: 12),
             PressableButton(
               height: 60,
               onTap: () => c.startRun(randomSeed()),

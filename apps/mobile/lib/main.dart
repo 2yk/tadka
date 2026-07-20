@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'game_controller.dart';
 import 'screens/bazaar_screen.dart';
+import 'screens/recipe_book_screen.dart';
 import 'screens/service_screen.dart';
 import 'screens/start_screen.dart';
 import 'screens/summary_screen.dart';
@@ -79,6 +80,7 @@ class _GameRootState extends State<GameRoot> {
       Phase.start => StartScreen(controller: c),
       Phase.service => ServiceScreen(controller: c, particles: _particles, shake: _shake),
       Phase.bazaar => BazaarScreen(controller: c),
+      Phase.recipeBook => RecipeBookScreen(onClose: c.closeRecipeBook),
       Phase.summary || Phase.victory => SummaryScreen(controller: c),
     };
 
