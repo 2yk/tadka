@@ -4,6 +4,7 @@
 //   dart run tools/sim --stake 3
 //   dart run tools/sim --stake 8 -n 2000 --deck royal
 //   dart run tools/sim --compare           # ladder side by side with the JS numbers
+//   dart run tools/sim --floor 0           # bot buys anything (the old, tasteless policy)
 //
 // The bot policy is a deliberate port of tools/sim.mjs's greedy bot — same value table,
 // same dig heuristic, same buy order — so the two ladders are comparable. Matching win
@@ -15,14 +16,38 @@ import 'dart:io';
 import 'package:game_core/game_core.dart';
 
 /// Crude value heuristic for the shop bot; heat is scarce, so it's weighted high.
-/// Mirrors VAL in tools/sim.mjs exactly — changing one without the other invalidates any
-/// comparison between the two ladders.
+///
+/// The first block mirrors VAL in tools/sim.mjs exactly — changing one of *those* without
+/// the other invalidates any comparison between the two ladders, which is what `--compare`
+/// exists for.
+///
+/// The second block rates the Dart-native expansion, which has no JS counterpart, so it
+/// cannot desync anything. It is not optional: without it every new utensil falls to the
+/// default 40 and the bot buys 69% of the catalog blind, which reads as a balance collapse
+/// (26% → 9% at stake 1) when it is really just an unrated shop. Values are set by analogy
+/// to the block above — heat over flavour, unconditional over conditional, multipliers
+/// highest, coins lowest — and discounted for how often the gate is actually open.
 const Map<String, int> _value = {
   'clay_handi': 100, 'emperors_wok': 75, 'ice_box': 80, 'tandoor': 70, 'wok': 70,
   'bamboo_steamer': 85, 'griddle': 78, 'salt_cellar': 60, 'mint_garnish': 62,
   'stock_pot': 55, 'golden_sieve': 90, 'butchers_block': 65, 'iron_tawa': 70,
   'rice_cooker': 58, 'honey_jar': 52, 'big_spoon': 45, 'pressure_cooker': 74,
   'grandmother_ladle': 66, 'street_cart': 20, 'chai_stall': 22,
+  // expansion — commons
+  'masala_dabba': 52, 'molcajete': 60, 'piloncillo_cone': 55, 'achaar_jar': 52,
+  'anchovy_tin': 48, 'katsuobushi_box': 52, 'tadka_pan': 42, 'baklava_tray': 40,
+  'onggi_crock': 40, 'salt_block': 50, 'kombu_basket': 50, 'tapas_plate': 25,
+  'dim_sum_basket': 50, 'meze_tray': 48, 'mercado_stall': 22, 'donabe': 56,
+  'thali_plate': 40, 'bento_box': 42, 'chitarra': 44, 'paella_pan': 46,
+  'cazuela': 42, 'karahi': 35, 'pilon': 20, 'tortilla_press': 28,
+  'banana_leaf': 58, 'idli_steamer': 54, 'garum_amphora': 56, 'wire_spider': 50,
+  'sac_lid': 52,
+  // expansion — uncommons
+  'chile_roaster': 55, 'parmesan_wheel': 66, 'cataplana': 60, 'sushi_geta': 55,
+  'comal': 62, 'metate': 32, 'saj_griddle': 64, 'braai_grid': 60,
+  'mangal_grill': 42, 'billig': 68, 'tagine': 62, 'hawker_stall': 24,
+  // expansion — rares
+  'yanagiba': 25, 'kazan': 95, 'maple_evaporator': 88, 'asado_cross': 45,
 };
 int _uval(String id) => _value[id] ?? 40;
 
@@ -109,9 +134,21 @@ bool _playService(RunState run) {
   return run.score >= run.target;
 }
 
+/// The bot declines offers it rates below this.
+///
+/// Not a balance knob — an instrument fix. Without it the bot buys ANY affordable utensil,
+/// which was survivable in a 20-utensil pool where most offers were decent, but in a
+/// 65-utensil pool it burns coins on situational pieces and starves Festival purchases.
+/// Since Festival recipe-leveling is the run's scaling engine, that reads as a balance
+/// collapse when it is really just a bot with no taste. A human declines offers and rerolls;
+/// the bot never rerolls, so a floor is the cheapest way to stop measuring the wrong thing.
+int _valueFloor = 50;
+
 void _shop(RunState run) {
   final offers = rollOffers(run);
-  final utensils = offers.where((o) => o.kind == 'utensil').toList()
+  final utensils = offers
+      .where((o) => o.kind == 'utensil' && _uval(o.id) >= _valueFloor)
+      .toList()
     ..sort((a, b) => _uval(b.id).compareTo(_uval(a.id)));
   // first pass: fill up to 3 slots with the best-valued utensils
   final cap = run.utensilSlots < 3 ? run.utensilSlots : 3;
@@ -178,6 +215,7 @@ void main(List<String> arguments) {
   final deckId = opt('--deck') ?? 'home';
   final stakeArg = opt('--stake');
   final compare = arguments.contains('--compare');
+  _valueFloor = int.tryParse(opt('--floor') ?? '') ?? _valueFloor;
 
   // Headless profile: unlock the full pool so the bot represents an experienced build,
   // matching what tools/sim.mjs does.

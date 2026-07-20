@@ -237,7 +237,13 @@ RunState newRun({required String seed, int stake = 1, String deckId = 'home'}) {
     if (b != null) run.blends.add(b);
   }
   if (deckCfg.startRareUtensil) {
-    final rares = kUtensils.where((u) => u.rarity == 'rare').toList();
+    // Prefer the Rares this profile has actually earned; fall back to the frozen starter
+    // set, never to the whole catalog — see [kStarterRareUtensils] for why the size of
+    // this list must not drift with content.
+    final earned = unlockedUtensilPool().where((u) => u.rarity == 'rare').toList();
+    final rares = earned.isNotEmpty
+        ? earned
+        : kStarterRareUtensils.map((id) => kUtensilById[id]!).toList();
     if (rares.isNotEmpty) run.utensils.add(rng.pick(rares));
   }
   bumpStat('runs', 1);

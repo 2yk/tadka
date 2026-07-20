@@ -61,12 +61,20 @@ void main() {
 
     // Iron Tawa is a starter utensil — available from the first run.
     expect(find.text('Iron Tawa'), findsOneWidget);
-    // Clay Handi is achievement-gated, so it must never be named on a fresh profile —
-    // scrolling the whole list must not turn it up.
-    await tester.drag(find.byType(Scrollable).last, const Offset(0, -2000));
-    await tester.pumpAndSettle();
-    expect(find.text('Clay Handi'), findsNothing);
+
+    // Sanity-check the fixture itself: this test is meaningless if the catalog ever ships
+    // fully unlocked, and with 65 utensils it's no longer obvious by eye.
+    final locked = gc.kUtensils.where((u) => !gc.isUnlocked('utensil', u.id)).toList();
+    expect(locked, isNotEmpty, reason: 'nothing is gated — the ladder has nothing to give');
+
+    // A locked entry must appear as a silhouette somewhere in the list. Scrolled to rather
+    // than assumed on-screen: the list is long and lazily built, so a fixed drag distance
+    // just tests where the scroll happened to land.
+    await _scrollTo(tester, find.text('???'));
     expect(find.text('???'), findsWidgets);
+
+    // Clay Handi is achievement-gated, so it must never be NAMED on a fresh profile.
+    expect(find.text('Clay Handi'), findsNothing);
   });
 
   testWidgets('unlocking a utensil surfaces it in the book', (tester) async {

@@ -346,7 +346,23 @@ void _expectSnap(Map<String, dynamic> want, Map<String, Object?> got, String whe
   }
 }
 
+/// The 20 utensils that exist in the JS reference. These traces replay runs recorded from
+/// that engine, so the shop must draw from exactly its catalog — Dart-native content would
+/// change the offers and the profile snapshot, and the fixture could never know about it.
+const _portedUtensilIds = {
+  'iron_tawa', 'mint_garnish', 'salt_cellar', 'honey_jar', 'stock_pot', 'street_cart',
+  'big_spoon', 'rice_cooker', 'tandoor', 'pressure_cooker', 'wok', 'chai_stall',
+  'bamboo_steamer', 'butchers_block', 'ice_box', 'griddle', 'clay_handi',
+  'grandmother_ladle', 'golden_sieve', 'emperors_wok',
+};
+
 void main() {
+  setUpAll(() {
+    activeUtensilCatalog =
+        kUtensils.where((u) => _portedUtensilIds.contains(u.id)).toList();
+  });
+  tearDownAll(() => activeUtensilCatalog = kUtensils);
+
   final file = File('test/vectors.json');
   if (!file.existsSync()) {
     throw StateError('test/vectors.json missing — regenerate with: node tools/gen-vectors.mjs');

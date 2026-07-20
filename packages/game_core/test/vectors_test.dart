@@ -62,11 +62,19 @@ void main() {
     (id, def) => MapEntry(id, _utensil(def as Map<String, dynamic>)),
   );
 
+  // Iterates the fixture, not the catalog: `kUtensils` also carries Dart-native expansion
+  // content that has no JS counterpart and never will, since the web build is frozen. The
+  // direction that matters is unchanged — every utensil the JS engine defines must still be
+  // in the Dart catalog, byte for byte.
   test('the shipping catalog matches the fixture definitions', () {
-    for (final u in kUtensils) {
-      final ref = _utensilDefs[u.id];
-      expect(ref, isNotNull, reason: '${u.id} missing from vectors — regenerate them');
-      expect(u.effect, equals(ref!.effect), reason: '${u.id} effect drifted from the JS catalog');
+    for (final entry in _utensilDefs.entries) {
+      // `_`-prefixed entries are the generator's synthetic DSL probes — real fixtures for
+      // scoring, but deliberately not shipping content.
+      if (entry.key.startsWith('_')) continue;
+      final ref = entry.value;
+      final u = kUtensilById[entry.key];
+      expect(u, isNotNull, reason: '${entry.key} is in the JS catalog but missing from Dart');
+      expect(u!.effect, equals(ref.effect), reason: '${u.id} effect drifted from the JS catalog');
       expect(u.condition, equals(ref.condition), reason: '${u.id} condition drifted');
       expect(u.cost, equals(ref.cost), reason: '${u.id} cost drifted');
       expect(u.rarity, equals(ref.rarity), reason: '${u.id} rarity drifted');

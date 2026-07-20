@@ -159,12 +159,18 @@ const Map<String, Map<String, String>> kDishNames = {
   'naples': {'high_card': 'Cicchetti', 'pair': 'Bruschetta', 'two_pair': 'Antipasti', 'three_kind': 'Risotto', 'straight': 'Primi e Secondi', 'flush': 'Margherita', 'full_house': 'Festa', 'four_kind': 'Quattro Formaggi', 'straight_flush': "Nonna's Feast", 'five_kind': 'Grand Festa', 'full_family': 'Monovarietale', 'perfect_palate': 'Il Capolavoro'},
 };
 
-/// The 20 M0 utensils (build spec §6), expressed purely in the effect DSL.
+/// The utensil catalog, expressed purely in the effect DSL.
 ///
 /// A few keys extend the spec's starter list — `num_cards`, `all_cards_same_family`,
 /// `pattern_at_least`, `heat_per_card`, `copy_right` — to express Wok / Bamboo Steamer /
 /// Emperor's Wok / Butcher's Block / Griddle / Grandmother's Ladle as data rather than code.
 /// Keep them in the content validator's allow-list.
+///
+/// **The first 20 entries are the ported M0 set and are frozen.** They are pinned against
+/// `web/game-core.mjs` by `test/vectors.json`, so editing an id, cost, condition or effect
+/// there breaks the differential guarantee rather than retuning a number.
+/// `test/utensils_test.dart` asserts them field by field. Everything after the expansion
+/// banner is Dart-native content and is free to tune.
 const List<Utensil> kUtensils = [
   // commons (cost 4)
   Utensil(id: 'iron_tawa', name: 'Iron Tawa', rarity: 'common', cost: 4, trigger: 'on_dish', condition: {'min_cards': 3}, effect: {'flavor_add': 30}, text: '+30 flavor if the dish has 3+ ingredients'),
@@ -189,6 +195,82 @@ const List<Utensil> kUtensils = [
   Utensil(id: 'grandmother_ladle', name: "Grandmother's Ladle", rarity: 'rare', cost: 9, trigger: 'on_dish', condition: null, effect: {'copy_right': true}, text: 'Copies the effect of the utensil to its right'),
   Utensil(id: 'golden_sieve', name: 'Golden Sieve', rarity: 'rare', cost: 9, trigger: 'on_dish', condition: {'pattern_is': 'flush'}, effect: {'flavor_add': 50, 'heat_add': 3}, text: 'Flushes get +50 flavor and +3 heat'),
   Utensil(id: 'emperors_wok', name: "Emperor's Wok", rarity: 'rare', cost: 9, trigger: 'on_dish', condition: {'num_cards': 5}, effect: {'heat_mult': 2}, text: '×2 heat if the dish uses 5 ingredients'),
+
+  // -------------------------------------------------------------------------
+  // M1 expansion — Dart-native content. Everything below this line was authored
+  // here, not ported, so it has no counterpart in `web/game-core.mjs` and does
+  // not appear in `test/vectors.json`.
+  //
+  // Three rules held while writing it, and they are what make the next 100 safe:
+  //
+  // 1. **No new DSL keys.** Every entry uses the nine conditions and eight effects
+  //    `_condMet`/`scoreDish` already understand, so the engine did not move.
+  //    `test/utensils_test.dart` asserts the allow-list over the whole catalog.
+  // 2. **Additive at common, multiplicative from uncommon up.** `heat_mult`
+  //    compounds across the five slots, so a cheap ×1.5 is a trap: four of them in
+  //    one rack is ×5 for 16 coins. Commons therefore only ever add.
+  // 3. **Family multipliers stay mutually exclusive.** `parmesan_wheel` (all Umami)
+  //    cannot fire alongside `tandoor` (all Spicy), so adding one per family widens
+  //    the choice without raising the stacking ceiling, which is still
+  //    Wok × family × Ice Box × Clay Handi.
+  //
+  // Locked by default: none of these are in [kStartUtensils], so `rollOffers` will
+  // not show them to a fresh profile. See the note there — nothing grants them yet.
+
+  // commons (cost 4) — one `contains_family` and one `all_cards_family` per family,
+  // then a rung for every recipe, then the dish-shape and timing hooks.
+  Utensil(id: 'masala_dabba', name: 'Masala Dabba', rarity: 'common', cost: 4, trigger: 'on_dish', condition: {'contains_family': 'spicy'}, effect: {'flavor_add': 25}, text: '+25 flavor if the dish contains a Spicy ingredient'),
+  Utensil(id: 'molcajete', name: 'Molcajete', rarity: 'common', cost: 4, trigger: 'on_dish', condition: {'contains_family': 'spicy'}, effect: {'heat_add': 3}, text: '+3 heat if the dish contains a Spicy ingredient'),
+  Utensil(id: 'piloncillo_cone', name: 'Piloncillo Cone', rarity: 'common', cost: 4, trigger: 'on_dish', condition: {'contains_family': 'sweet'}, effect: {'heat_add': 2}, text: '+2 heat if the dish contains a Sweet ingredient'),
+  Utensil(id: 'achaar_jar', name: 'Achaar Jar', rarity: 'common', cost: 4, trigger: 'on_dish', condition: {'contains_family': 'sour'}, effect: {'flavor_add': 25}, text: '+25 flavor if the dish contains a Sour ingredient'),
+  Utensil(id: 'anchovy_tin', name: 'Anchovy Tin', rarity: 'common', cost: 4, trigger: 'on_dish', condition: {'contains_family': 'salty'}, effect: {'flavor_add': 20}, text: '+20 flavor if the dish contains a Salty ingredient'),
+  Utensil(id: 'katsuobushi_box', name: 'Katsuobushi Box', rarity: 'common', cost: 4, trigger: 'on_dish', condition: {'contains_family': 'umami'}, effect: {'flavor_add': 25}, text: '+25 flavor if the dish contains an Umami ingredient'),
+  Utensil(id: 'tadka_pan', name: 'Tadka Pan', rarity: 'common', cost: 4, trigger: 'on_dish', condition: {'all_cards_family': 'spicy'}, effect: {'flavor_add': 30}, text: '+30 flavor if every ingredient is Spicy'),
+  Utensil(id: 'baklava_tray', name: 'Baklava Tray', rarity: 'common', cost: 4, trigger: 'on_dish', condition: {'all_cards_family': 'sweet'}, effect: {'flavor_add': 30}, text: '+30 flavor if every ingredient is Sweet'),
+  Utensil(id: 'onggi_crock', name: 'Onggi Crock', rarity: 'common', cost: 4, trigger: 'on_dish', condition: {'all_cards_family': 'sour'}, effect: {'flavor_add': 30}, text: '+30 flavor if every ingredient is Sour'),
+  Utensil(id: 'salt_block', name: 'Salt Block', rarity: 'common', cost: 4, trigger: 'on_dish', condition: {'all_cards_family': 'salty'}, effect: {'heat_add': 4}, text: '+4 heat if every ingredient is Salty'),
+  Utensil(id: 'kombu_basket', name: 'Kombu Basket', rarity: 'common', cost: 4, trigger: 'on_dish', condition: {'all_cards_family': 'umami'}, effect: {'heat_add': 4}, text: '+4 heat if every ingredient is Umami'),
+  Utensil(id: 'tapas_plate', name: 'Tapas Plate', rarity: 'common', cost: 4, trigger: 'on_dish', condition: {'pattern_is': 'high_card'}, effect: {'flavor_add': 25}, text: '+25 flavor if the recipe is a High Card'),
+  Utensil(id: 'dim_sum_basket', name: 'Dim Sum Basket', rarity: 'common', cost: 4, trigger: 'on_dish', condition: {'pattern_is': 'pair'}, effect: {'heat_add': 3}, text: '+3 heat if the recipe is a Pair'),
+  Utensil(id: 'meze_tray', name: 'Meze Tray', rarity: 'common', cost: 4, trigger: 'on_dish', condition: {'pattern_is': 'two_pair'}, effect: {'flavor_add': 30}, text: '+30 flavor if the recipe is Two Pair'),
+  Utensil(id: 'mercado_stall', name: 'Mercado Stall', rarity: 'common', cost: 4, trigger: 'on_dish', condition: {'pattern_is': 'two_pair'}, effect: {'coin_add': 2}, text: '+2 coins when you cook Two Pair'),
+  Utensil(id: 'donabe', name: 'Donabe', rarity: 'common', cost: 4, trigger: 'on_dish', condition: {'pattern_is': 'three_kind'}, effect: {'heat_add': 3}, text: '+3 heat if the recipe is Three of a Kind'),
+  Utensil(id: 'thali_plate', name: 'Thali Plate', rarity: 'common', cost: 4, trigger: 'on_dish', condition: {'pattern_is': 'straight'}, effect: {'flavor_add': 35}, text: '+35 flavor if the recipe is a Straight'),
+  Utensil(id: 'bento_box', name: 'Bento Box', rarity: 'common', cost: 4, trigger: 'on_dish', condition: {'pattern_is': 'straight'}, effect: {'heat_add': 3}, text: '+3 heat if the recipe is a Straight'),
+  Utensil(id: 'chitarra', name: 'Chitarra', rarity: 'common', cost: 4, trigger: 'on_dish', condition: {'pattern_at_least': 'straight'}, effect: {'flavor_add': 25}, text: '+25 flavor if the recipe is a Straight or better'),
+  Utensil(id: 'paella_pan', name: 'Paella Pan', rarity: 'common', cost: 4, trigger: 'on_dish', condition: {'pattern_is': 'flush'}, effect: {'flavor_add': 30}, text: '+30 flavor if the recipe is a Flush'),
+  Utensil(id: 'cazuela', name: 'Cazuela', rarity: 'common', cost: 4, trigger: 'on_dish', condition: {'pattern_is': 'full_house'}, effect: {'flavor_add': 35}, text: '+35 flavor if the recipe is a Full House'),
+  Utensil(id: 'karahi', name: 'Karahi', rarity: 'common', cost: 4, trigger: 'on_dish', condition: {'pattern_is': 'four_kind'}, effect: {'heat_add': 4}, text: '+4 heat if the recipe is Four of a Kind'),
+  Utensil(id: 'pilon', name: 'Pilón', rarity: 'common', cost: 4, trigger: 'on_dish', condition: {'num_cards': 1}, effect: {'heat_add': 4}, text: '+4 heat if the dish uses exactly 1 ingredient'),
+  Utensil(id: 'tortilla_press', name: 'Tortilla Press', rarity: 'common', cost: 4, trigger: 'on_dish', condition: {'num_cards': 2}, effect: {'flavor_add': 25}, text: '+25 flavor if the dish uses exactly 2 ingredients'),
+  Utensil(id: 'banana_leaf', name: 'Banana Leaf', rarity: 'common', cost: 4, trigger: 'on_dish', condition: {'min_cards': 5}, effect: {'flavor_add': 35}, text: '+35 flavor if the dish has 5 ingredients'),
+  Utensil(id: 'idli_steamer', name: 'Idli Steamer', rarity: 'common', cost: 4, trigger: 'on_dish', condition: {'contains_family': 'sour', 'min_cards': 3}, effect: {'heat_add': 3}, text: '+3 heat if the dish has 3+ ingredients and contains a Sour one'),
+  Utensil(id: 'garum_amphora', name: 'Garum Amphora', rarity: 'common', cost: 4, trigger: 'on_dish', condition: {'contains_family': 'salty', 'min_cards': 4}, effect: {'heat_add': 4}, text: '+4 heat if the dish has 4+ ingredients and contains a Salty one'),
+  Utensil(id: 'wire_spider', name: 'Wire Spider', rarity: 'common', cost: 4, trigger: 'on_dish', condition: {'is_first_dish': true}, effect: {'flavor_add': 30}, text: 'First dish of each service gets +30 flavor'),
+  Utensil(id: 'sac_lid', name: 'Sač Lid', rarity: 'common', cost: 4, trigger: 'on_dish', condition: {'is_last_dish': true}, effect: {'flavor_add': 35}, text: 'Last dish of each service gets +35 flavor'),
+
+  // uncommons (cost 6) — where the multipliers start. Each is gated on a single
+  // recipe or dish shape, so at most one fires per dish and they cannot chain.
+  Utensil(id: 'chile_roaster', name: 'Chile Roaster', rarity: 'uncommon', cost: 6, trigger: 'on_dish', condition: {'all_cards_family': 'spicy'}, effect: {'flavor_per_card': 10}, text: '+10 flavor per ingredient if every ingredient is Spicy'),
+  Utensil(id: 'parmesan_wheel', name: 'Parmesan Wheel', rarity: 'uncommon', cost: 6, trigger: 'on_dish', condition: {'all_cards_family': 'umami'}, effect: {'heat_mult': 1.5}, text: '×1.5 heat if every ingredient is Umami'),
+  Utensil(id: 'cataplana', name: 'Cataplana', rarity: 'uncommon', cost: 6, trigger: 'on_dish', condition: {'pattern_is': 'two_pair'}, effect: {'heat_mult': 1.5}, text: '×1.5 heat if the recipe is Two Pair'),
+  Utensil(id: 'sushi_geta', name: 'Sushi Geta', rarity: 'uncommon', cost: 6, trigger: 'on_dish', condition: {'pattern_is': 'straight'}, effect: {'heat_mult': 1.5}, text: '×1.5 heat if the recipe is a Straight'),
+  Utensil(id: 'comal', name: 'Comal', rarity: 'uncommon', cost: 6, trigger: 'on_dish', condition: {'pattern_is': 'flush'}, effect: {'heat_mult': 1.5}, text: '×1.5 heat if the recipe is a Flush'),
+  Utensil(id: 'metate', name: 'Metate', rarity: 'uncommon', cost: 6, trigger: 'on_dish', condition: {'num_cards': 2}, effect: {'heat_mult': 1.5}, text: '×1.5 heat if the dish uses exactly 2 ingredients'),
+  Utensil(id: 'saj_griddle', name: 'Saj Griddle', rarity: 'uncommon', cost: 6, trigger: 'on_dish', condition: {'pattern_at_least': 'straight'}, effect: {'heat_add': 5}, text: '+5 heat if the recipe is a Straight or better'),
+  Utensil(id: 'braai_grid', name: 'Braai Grid', rarity: 'uncommon', cost: 6, trigger: 'on_dish', condition: {'pattern_at_least': 'full_house'}, effect: {'heat_add': 5}, text: '+5 heat if the recipe is a Full House or better'),
+  Utensil(id: 'mangal_grill', name: 'Mangal Grill', rarity: 'uncommon', cost: 6, trigger: 'on_dish', condition: {'pattern_at_least': 'four_kind'}, effect: {'flavor_add': 60}, text: '+60 flavor if the recipe is Four of a Kind or better'),
+  Utensil(id: 'billig', name: 'Billig', rarity: 'uncommon', cost: 6, trigger: 'on_dish', condition: {'is_first_dish': true}, effect: {'heat_add': 5}, text: 'First dish of each service gets +5 heat'),
+  Utensil(id: 'tagine', name: 'Tagine', rarity: 'uncommon', cost: 6, trigger: 'on_dish', condition: {'is_last_dish': true}, effect: {'flavor_add': 60}, text: 'Last dish of each service gets +60 flavor'),
+  Utensil(id: 'hawker_stall', name: 'Hawker Stall', rarity: 'uncommon', cost: 6, trigger: 'on_dish', condition: {'min_cards': 3}, effect: {'coin_add': 2}, text: '+2 coins if the dish has 3+ ingredients'),
+
+  // rares (cost 9) — four different answers to "what is my run about?". None is a
+  // bigger version of a common: each one is only worth a slot if the rest of the
+  // rack is built around it.
+  Utensil(id: 'yanagiba', name: 'Yanagiba', rarity: 'rare', cost: 9, trigger: 'on_dish', condition: {'num_cards': 1}, effect: {'heat_mult': 4}, text: '×4 heat if the dish uses exactly 1 ingredient'),
+  Utensil(id: 'kazan', name: 'Kazan', rarity: 'rare', cost: 9, trigger: 'on_dish', condition: {'min_cards': 4}, effect: {'heat_per_card': 2}, text: '+2 heat per ingredient if the dish has 4+ ingredients'),
+  Utensil(id: 'maple_evaporator', name: 'Maple Evaporator', rarity: 'rare', cost: 9, trigger: 'on_dish', condition: {'contains_family': 'sweet', 'pattern_at_least': 'three_kind'}, effect: {'heat_mult': 2}, text: '×2 heat on Three of a Kind or better containing a Sweet ingredient'),
+  Utensil(id: 'asado_cross', name: 'Asado Cross', rarity: 'rare', cost: 9, trigger: 'on_dish', condition: {'pattern_at_least': 'straight_flush'}, effect: {'flavor_add': 150, 'heat_add': 12}, text: 'Straight Flush or better gets +150 flavor and +12 heat'),
 ];
 
 final Map<String, Utensil> kUtensilById = {for (final u in kUtensils) u.id: u};

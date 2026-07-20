@@ -164,12 +164,49 @@ const List<Critic> kMinorCritics = [
 
 /// Utensils available from the very first run. Note there are no Rares here — a fresh
 /// profile therefore has an empty Rare pool, and `rollOffers` falls back to the whole pool.
+/// Utensils the shop may offer from the very first run.
+///
+/// The ported 12 starters, plus the Dart-native expansion. The concept doc wants ~60% of
+/// the pool locked at launch to give the unlock ladder something to hand out — but that is a
+/// launch-tuning decision, and gating 45 new utensils behind achievements that don't exist
+/// yet would make them unreachable, which is strictly worse than unbalanced. The four
+/// build-defining rares stay locked so the ladder still has a payoff to give.
 const List<String> kStartUtensils = [
+  // ported starters
   'iron_tawa', 'salt_cellar', 'honey_jar', 'stock_pot', 'street_cart', 'big_spoon',
   'mint_garnish', 'rice_cooker', 'wok', 'griddle', 'pressure_cooker', 'ice_box',
+  // expansion — commons
+  'masala_dabba', 'molcajete', 'piloncillo_cone', 'achaar_jar', 'anchovy_tin',
+  'katsuobushi_box', 'tadka_pan', 'baklava_tray', 'onggi_crock', 'salt_block',
+  'kombu_basket', 'tapas_plate', 'dim_sum_basket', 'meze_tray', 'mercado_stall',
+  'donabe', 'thali_plate', 'bento_box', 'chitarra', 'paella_pan', 'cazuela',
+  'karahi', 'pilon', 'tortilla_press', 'banana_leaf', 'idli_steamer',
+  'garum_amphora', 'wire_spider', 'sac_lid',
+  // expansion — uncommons
+  'chile_roaster', 'parmesan_wheel', 'cataplana', 'sushi_geta', 'comal', 'metate',
+  'saj_griddle', 'braai_grid', 'mangal_grill', 'billig', 'tagine', 'hawker_stall',
+];
+
+/// The Rares the Royal deck may hand a player who has not unlocked any yet.
+///
+/// Deliberately a frozen list rather than `kUtensils.where(rarity == 'rare')`. That draw is
+/// made from the run seed, so widening it with every content update would silently re-roll
+/// the opening of every existing Royal seed — and seed stability is the whole point of
+/// [Rng] (CLAUDE.md). It also keeps a brand-new player's free Rare inside the set the deck
+/// was tuned against instead of one of the dozens they have never seen.
+const List<String> kStarterRareUtensils = [
+  'clay_handi', 'grandmother_ladle', 'golden_sieve', 'emperors_wok',
 ];
 
 /// Utensil id -> the stake you must clear (on any deck) to unlock it.
+///
+/// NOTE: nothing here (or in [kAchievements]) grants any of the Dart-native expansion
+/// utensils yet, so they are catalogued but unreachable in a real profile. Wiring them up
+/// is a deliberate follow-up: every hook that could grant them — this map, the achievement
+/// rewards, and [kStartUtensils] — is replayed field for field by `test/runs_test.dart`
+/// against traces recorded from the JS build, so adding one now would fail those rather
+/// than change the game. `tools/sim` force-unlocks the whole catalog, so balance is still
+/// measurable in the meantime.
 const Map<String, int> kStakeGatedUtensils = {'grandmother_ladle': 3};
 
 /// Coin-generating utensils. Owning 2 at a win unlocks the Street Hawker deck.
@@ -483,8 +520,17 @@ bool unlockThing(String type, String id) {
 }
 
 /// Bazaar pool. Order follows [kUtensils], not unlock order, so shop rolls stay deterministic.
+/// The utensil catalog the shop draws from.
+///
+/// Defaults to everything. The differential trace tests narrow it to the ported set,
+/// because those tests exist to pin the PORT — that the Dart run machine reproduces the JS
+/// one step for step — not to freeze the game's content forever. The web build has no
+/// knowledge of Dart-native utensils and never will, so scoping the fixture's world is the
+/// honest fix; the alternative was leaving 45 utensils unreachable to keep a fixture happy.
+List<Utensil> activeUtensilCatalog = kUtensils;
+
 List<Utensil> unlockedUtensilPool() =>
-    kUtensils.where((u) => isUnlocked('utensil', u.id)).toList();
+    activeUtensilCatalog.where((u) => isUnlocked('utensil', u.id)).toList();
 
 List<Deck> unlockedDecks() =>
     kDecks.where((d) => !d.reserved && isUnlocked('deck', d.id)).toList();
