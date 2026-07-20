@@ -6,8 +6,12 @@
 /// parallel implementation that drifts (see CLAUDE.md). The constraint is
 /// enforced by `test/no_flutter_imports_test.dart`.
 ///
-/// Scaffold only — the ports of §RNG, §ENGINE, §PROGRESSION and §RUN from
-/// `web/tadka.html` land here next.
+/// Ported so far: §RNG, §CONTENT, §ENGINE. §PROGRESSION and §RUN land next.
+/// The web build remains the behavioural reference — `test/vectors_test.dart`
+/// asserts this port matches it case for case.
 library;
 
-// Public API is exported from here as `src/` fills in.
+export 'src/catalog.dart';
+export 'src/engine.dart';
+export 'src/models.dart';
+export 'src/rng.dart';
