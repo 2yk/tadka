@@ -595,6 +595,12 @@ void main() {
     });
 
     test('a fresh profile sees exactly the starter set, in catalog order', () {
+      // The gated build's pool. `kShowAllContent` is the internal-testing switch and defaults
+      // on, so it is pinned off here — this test is about the ladder, not the switch.
+      // `content_visibility_test.dart` asserts what the switch does in both positions.
+      final showAll = kShowAllContent;
+      addTearDown(() => kShowAllContent = showAll);
+      kShowAllContent = false;
       profile = defaultProfile();
       final pool = unlockedUtensilPool().map((u) => u.id).toList();
       expect(pool.toSet(), equals(kStartUtensils.toSet()),

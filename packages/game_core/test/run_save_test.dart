@@ -64,10 +64,13 @@ void main() {
     test('utensils and blends come back', () {
       final run = newRun(seed: 'SAVE-INV', stake: 1);
       run.utensils.addAll([kUtensilById['iron_tawa']!, kUtensilById['tandoor']!]);
+      // Every deck now opens with a blend or two so the rack is discoverable, so this asserts
+      // the whole rack rather than assuming it started empty.
       run.blends.addAll([kBlendById['sun_dry']!, kBlendById['chili_oil']!]);
+      final expectedBlends = run.blends.map((b) => b.id).toList();
       final r = _roundTrip(run);
       expect(r.utensils.map((u) => u.id).toList(), ['iron_tawa', 'tandoor']);
-      expect(r.blends.map((b) => b.id).toList(), ['sun_dry', 'chili_oil']);
+      expect(r.blends.map((b) => b.id).toList(), expectedBlends);
     });
   });
 
@@ -107,10 +110,11 @@ void main() {
     test('survive, because they are saved whole rather than looked up by id', () {
       final run = newRun(seed: 'SAVE-BLEND', stake: 1);
       run.blends.add(kBlendById['chili_oil']!);
+      final chiliOil = run.blends.length - 1;
       final victim = run.hand.indexWhere((c) => c.family != 'spicy');
       expect(victim, isNot(-1));
 
-      applyBlend(run, 0, [victim]);
+      applyBlend(run, chiliOil, [victim]);
       final mutated = run.hand[victim];
       expect(mutated.family, 'spicy');
       expect(mutated.display, startsWith('Chili '));
@@ -125,8 +129,10 @@ void main() {
     test('a Sun-Dry duplicate survives despite sharing an id with its source', () {
       final run = newRun(seed: 'SAVE-DUP', stake: 1);
       run.blends.add(kBlendById['sun_dry']!);
+      // The deck's own starting blends sit ahead of it, so index by position from the end.
+      final sunDry = run.blends.length - 1;
       final before = run.hand.length;
-      applyBlend(run, 0, [0]);
+      applyBlend(run, sunDry, [0]);
       expect(run.hand.length, before + 1);
 
       final r = _roundTrip(run);

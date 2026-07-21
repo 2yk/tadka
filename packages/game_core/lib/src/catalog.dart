@@ -54,7 +54,14 @@ class Deck {
   final bool reserved;
 }
 
-const List<Deck> kDecks = [
+/// **The ported deck definitions. Frozen.**
+///
+/// `newRun` copies `startBlends` straight into `run.blends`, and the differential traces in
+/// `test/runs_test.dart` snapshot that list after every action — so the Home, Royal and Hawker
+/// decks opening with an empty rack is part of the recorded world, not a design choice that
+/// can be revisited in place. Same trap as [kUtensils] and [kBlends], reached through a
+/// different field: `test/runs_test.dart` pins [activeDeckCatalog] to this list.
+const List<Deck> kPortedDecks = [
   Deck(id: 'home', name: 'Home Kitchen', identity: 'Balanced 52-card pantry'),
   Deck(
     id: 'coastal',
@@ -74,7 +81,70 @@ const List<Deck> kDecks = [
   Deck(id: 'monsoon', name: 'Monsoon Larder', identity: 'Ships with v1.1 Monsoon Mode', reserved: true),
 ];
 
-final Map<String, Deck> kDeckById = {for (final d in kDecks) d.id: d};
+/// The live decks: [kPortedDecks], each opening with a blend or two.
+///
+/// **Why every deck now starts with one.** Blends are the game's least discoverable system —
+/// they are the only mechanic that edits cards rather than scoring them, and the only route to
+/// the three secret recipes. The Home deck shipped with an empty rack, so the blend rack never
+/// rendered, and a player who never bought one from the bazaar could finish a whole run without
+/// learning the verb exists. A starting blend makes the rack part of the first hand.
+///
+/// They are chosen to *teach*, not to power a build: all six are the ported, well-understood
+/// blends, each costs 3-4 coins in the shop, and each deck's pair names a different verb —
+/// rewrite a family, move an intensity, make a copy, draw. Nothing here is the strongest thing
+/// a blend can do (no Varak, no Lievito Madre, no Conserva); those stay a purchase.
+///
+/// Only the [Deck.startBlends] and [Deck.identity] fields differ from [kPortedDecks] —
+/// `test/content_visibility_test.dart` asserts exactly that, so this pair cannot drift into two
+/// different sets of decks.
+const List<Deck> kDecks = [
+  Deck(
+    id: 'home',
+    name: 'Home Kitchen',
+    identity: 'Balanced 52-card pantry; start with Chili Oil + Fermentation',
+    startBlends: ['chili_oil', 'fermentation'],
+  ),
+  Deck(
+    id: 'coastal',
+    name: 'Coastal Pantry',
+    identity: '+4 Sour, -4 Salty; start with Sun-Dry + Pickling Brine',
+    familyDelta: {'sour': 4, 'salty': -4},
+    startBlends: ['sun_dry', 'brine'],
+  ),
+  Deck(
+    id: 'royal',
+    name: 'Royal Kitchen',
+    identity: '44 cards; a random Rare utensil, and a Whetstone',
+    trim: 8,
+    startBlends: ['sharpen'],
+    startRareUtensil: true,
+  ),
+  Deck(
+    id: 'hawker',
+    name: 'Street Hawker',
+    identity: 'Cooks 5, utensil slots 4; start with Mise en Place',
+    startBlends: ['mise'],
+    cooks: 5,
+    utensilSlots: 4,
+  ),
+  Deck(id: 'monsoon', name: 'Monsoon Larder', identity: 'Ships with v1.1 Monsoon Mode', reserved: true),
+];
+
+List<Deck> _activeDecks = kDecks;
+Map<String, Deck> _deckIndex = {for (final d in kDecks) d.id: d};
+
+/// The deck catalog the game builds runs from. Fourth instance of the [activeUtensilCatalog]
+/// seam, and the same reason: live play gets the decks as designed, the differential traces
+/// narrow it to [kPortedDecks] so a recorded run still opens with the rack it was recorded
+/// with. Assigning this rebuilds [kDeckById], which is what `newRun` actually reads.
+List<Deck> get activeDeckCatalog => _activeDecks;
+
+set activeDeckCatalog(List<Deck> decks) {
+  _activeDecks = decks;
+  _deckIndex = {for (final d in decks) d.id: d};
+}
+
+Map<String, Deck> get kDeckById => _deckIndex;
 
 /// The full pantry: 5 families x ranks 1-10, plus 2 prized cards, then deck modifiers.
 List<Card> buildPantry([Deck? deck]) {

@@ -117,12 +117,18 @@ class _Recipes extends StatelessWidget {
       itemBuilder: (context, i) {
         final p = order[i];
         final secret = gc.kSecretPatterns.contains(p);
-        final known = discovered.contains(p) || !secret;
+        // Masking the three secrets is the right call for a public build — spoiling them
+        // removes the discovery — and the wrong one for an internal test, where the whole
+        // point is to see what exists. `kShowAllContent` names them; the discovery state
+        // underneath is still recorded, so flipping the flag restores the masks.
+        final known = discovered.contains(p) || !secret || gc.kShowAllContent;
         final base = gc.kRecipe[p]!;
         return _Row(
           title: known ? (gc.kGenericNames[p] ?? p) : '? ? ?',
           subtitle: known
-              ? '${base.$1} flavor × ${base.$2} heat'
+              ? (secret
+                  ? '${base.$1} flavor × ${base.$2} heat — blends only'
+                  : '${base.$1} flavor × ${base.$2} heat')
               : 'A secret recipe — reachable only with blends',
           locked: !known,
           trailing: secret

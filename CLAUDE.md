@@ -37,10 +37,30 @@ The established fix is a fixture-scoping seam:
 
 ```dart
 List<Utensil> activeUtensilCatalog = kUtensils;   // and activeBlendCatalog, activeFestivalCatalog
+List<Deck> activeDeckCatalog = kDecks;            // assigning it rebuilds kDeckById
 ```
 
 Live play uses everything; `runs_test.dart` pins each to the ported set in `setUpAll`. The route
 is a `newRun` parameter for the same reason. **Scope the fixture, don't freeze the game.**
+
+`activeDeckCatalog` is the fifth instance and reached the traces by a different road again: it
+is not a list the RNG indexes, but `newRun` copies `deckCfg.startBlends` into `run.blends`,
+which every recorded step snapshots. `kPortedDecks` holds the JS build's definitions and
+`kDecks` the live ones; they may differ in `startBlends` and `identity` and nothing else, which
+`content_visibility_test.dart` asserts field by field.
+
+## The internal-testing switch
+
+`kShowAllContent` in `progression.dart` — **defaults true**, and is read in exactly two places
+(`isUnlocked`, `maxStake`). On, every utensil is in the shop pool from run one, every deck and
+stake is selectable, and the Recipe Book and Help name the secret recipes. Set it to `false` for
+a discovery-gated public build; that is the only edit needed.
+
+It is a *read* override, never a write one. `unlockThing`, `setStakeProgress`, `recordRecipe`
+and the achievement bus all still record the real progression underneath, so flipping the flag
+back turns a tester's save into an ordinary gated profile. `content_visibility_test.dart` pins
+both positions and the reversal; `runs_test.dart` forces it off in `setUpAll`, because the JS
+reference has no notion of it and its recorded shop rolls are rolls against the starter pool.
 
 Never regenerate `vectors.json` to make a failing test pass. Those vectors are recorded from the
 frozen JS engine; regenerating them against Dart would only prove Dart agrees with Dart.
@@ -135,8 +155,9 @@ Load-bearing balance facts, hard-won — don't undo without re-simming:
 - **No sound.** Deliberately excluded for now.
 - **Art is placeholder** — emoji and generated SVG. Fraunces/Inter aren't bundled, so display
   type falls back to a platform serif.
-- **Unlocks are generous** — 24 of 95 utensils gated. The concept doc wants ~60% locked at
-  launch; leaving content reachable was chosen so testers actually see it.
+- **Nothing is gated right now** — `kShowAllContent` is on for internal testing. Underneath it
+  the ladder still gates 24 of 95 utensils, which is short of the concept doc's ~60% locked at
+  launch; that number is a launch-tuning decision to take when the flag goes off.
 - **Android is debug-signed**; iOS uses free provisioning (7-day expiry, re-install to fix).
 - **Not expressible without engine work:** The Rival Chef (dish cap — also changes the economy,
   since unused cooks pay coins), The Health Inspector (slot-0 suppression, with a trap around

@@ -23,6 +23,40 @@ import 'dart:convert';
 import 'catalog.dart';
 import 'models.dart';
 
+// ---------------------------------------------------------------------------
+// The internal-testing switch
+// ---------------------------------------------------------------------------
+
+/// **Show everything the game contains, from run one.** Internal-testing setting.
+///
+/// The build is content-complete but discovery-gated, and during an internal test that gating
+/// works against the person paying for the content: 95 utensils exist and a fresh profile is
+/// offered 74 of them, three recipes read as `? ? ?`, four of five decks and seven of eight
+/// stakes are padlocked. None of that is measurable in a few days of play, so for an internal
+/// build this defaults to **true** and every catalog is visible and reachable immediately.
+///
+/// **For a discovery-gated public build, set this to `false`.** That is the only edit needed:
+/// nothing below has been deleted, and this flag is read in exactly two places —
+/// [isUnlocked] and [maxStake]. The whole ladder is intact underneath it:
+///
+///  * [kStartUtensils] still names the starting pool, and [unlockedUtensilPool] still filters
+///    on it once the flag is off;
+///  * [kAchievements] still fires, still grants, and still queues its toast — [unlockThing]
+///    writes to the save either way, so a tester still *sees* the unlock happen;
+///  * [setStakeProgress] still records the stake ladder per deck;
+///  * `recipes_discovered` is still recorded, so the Recipe Book's discovery state survives.
+///
+/// It is deliberately a mutable variable rather than a `const`: the differential run traces in
+/// `test/runs_test.dart` replay a recorded shop pool and pin it to `false` in `setUpAll`, and
+/// `test/content_visibility_test.dart` asserts both modes. Same seam as
+/// [activeUtensilCatalog] — scope the fixture, don't freeze the game.
+///
+/// Two knock-on effects worth knowing when it is on:
+///  * `rollOffers` draws utensils from the whole catalog, so a fresh profile meets Rares.
+///  * `newRun`'s Royal-deck free Rare is picked from every unlocked Rare, so a Royal seed
+///    opens differently than it would on a gated profile. Both are the point of the switch.
+bool kShowAllContent = true;
+
 /// One stake's difficulty knob. Kept as loose data — the same shape as `stakes.json` —
 /// so a new modifier is a content edit plus one branch in [stakeConfig].
 class StakeModifier {
@@ -518,7 +552,12 @@ void saveProfile() {
 ///
 /// `home` and the 12 [kStartUtensils] are always available; they are not written into the
 /// save, so a fresh profile still has a playable pool.
+///
+/// [kShowAllContent] short-circuits the whole question for internal builds. It is a *read*
+/// override only — [unlockThing] still records the real unlock, so the ladder underneath is
+/// untouched and flipping the flag off restores gated behaviour exactly.
 bool isUnlocked(String type, String id) {
+  if (kShowAllContent) return true;
   if (type == 'deck') return id == 'home' || (profile.unlocks['decks'] ?? const []).contains(id);
   if (type == 'utensil') {
     return kStartUtensils.contains(id) || (profile.unlocks['utensils'] ?? const []).contains(id);
@@ -566,10 +605,17 @@ List<Blend> activeBlendCatalog = kBlends;
 /// `test/runs_test.dart` narrows it to [kPortedFestivals]; live play gets all ten.
 List<Festival> activeFestivalCatalog = kFestivals;
 
+/// The decks the start screen may offer.
+///
+/// `reserved` decks stay out even under [kShowAllContent]: Monsoon Larder is a v1.1 placeholder
+/// with no mechanics behind it, so listing it would show a tester an empty box, not content.
 List<Deck> unlockedDecks() =>
-    kDecks.where((d) => !d.reserved && isUnlocked('deck', d.id)).toList();
+    activeDeckCatalog.where((d) => !d.reserved && isUnlocked('deck', d.id)).toList();
 
-int maxStake(String deckId) => profile.stakeProgress[deckId] ?? 1;
+/// The highest stake selectable for [deckId]. [kShowAllContent] opens the whole ladder;
+/// [setStakeProgress] keeps recording the real progression underneath either way.
+int maxStake(String deckId) =>
+    kShowAllContent ? kStakes.length : (profile.stakeProgress[deckId] ?? 1);
 
 void setStakeProgress(String deckId, int stake) {
   if (stake > (profile.stakeProgress[deckId] ?? 1)) {

@@ -23,6 +23,7 @@
 /// in words instead. If coin-to-score conversion ever gets modelled, that is the place.
 library;
 
+import 'blends.dart';
 import 'catalog.dart';
 import 'engine.dart';
 import 'models.dart';
@@ -164,6 +165,26 @@ String _num1(double n) {
 bool _timingFired(ScoreContext ctx, String key, bool active) =>
     active && ctx.utensils.any((u) => u.condition?[key] == true);
 
+/// Which track(s) a `mult` step multiplied, read off the step the engine itself logged.
+///
+/// `scoreDish` writes a slot's parts as `'Name: ×2 flavor, +3 heat'`, tags the line `mult`
+/// when either multiplier fired, and no utensil name contains a colon — so splitting on the
+/// first colon and looking for `×` inside each part says exactly which axis moved. This
+/// matters because the v1.0 pass added nine `flavor_mult` utensils to a catalog that had only
+/// ever multiplied heat, and the Coach's one-liner used to tell a player holding a Mole Olla
+/// that it "multiplies heat". A Coach that misnames the axis is teaching the wrong build.
+Set<String> _multAxes(ScoreStep s) {
+  final at = s.text.indexOf(':');
+  final tail = at < 0 ? s.text : s.text.substring(at + 1);
+  final axes = <String>{};
+  for (final part in tail.split(',')) {
+    if (!part.contains('×')) continue;
+    if (part.contains('flavor')) axes.add('flavor');
+    if (part.contains('heat')) axes.add('heat');
+  }
+  return axes;
+}
+
 /// The strategic one-liner: names the recipe, then the single biggest thing that moved the
 /// number.
 ///
@@ -179,14 +200,25 @@ String _dishWhy(ScoreResult res, ScoreContext ctx) {
   final mults = res.steps.where((s) => s.cls == 'mult').toList();
   if (mults.isNotEmpty) {
     final who = mults.map((s) => s.text.split(':').first).join(' + ');
+    final axes = <String>{for (final s in mults) ..._multAxes(s)};
     var timing = '';
     if (_timingFired(ctx, 'is_last_dish', ctx.isLastDish)) {
       timing = ' This spends your last cook, which is the only time it fires.';
     } else if (_timingFired(ctx, 'is_first_dish', ctx.isFirstDish)) {
       timing = ' It only fires on a service\'s first dish, and this is it.';
     }
-    return '$name — $who multiplies heat, and heat scales your whole flavor total, so one '
-        'big ×heat beats piling on flavor ($totals).$timing';
+    final String how;
+    if (axes.length > 1) {
+      how = 'multiplies both tracks, and the two compound — a ×flavor and a ×heat on the '
+          'same dish is the largest single jump in the game';
+    } else if (axes.contains('flavor')) {
+      how = 'multiplies flavor, and it lands after every flat bonus in its slot, so the flavor '
+          'you stacked to its left is what gets doubled';
+    } else {
+      how = 'multiplies heat, and heat scales your whole flavor total, so one big ×heat beats '
+          'piling on flavor';
+    }
+    return '$name — $who $how ($totals).$timing';
   }
 
   final palate = ctx.palate;
@@ -197,17 +229,23 @@ String _dishWhy(ScoreResult res, ScoreContext ctx) {
         'recipe, so it is worth more here than in any other city ($totals).';
   }
 
-  if (_kBigPatterns.contains(res.pattern)) {
-    return '$name — reaching it is the win: the big recipes start from a far higher base '
-        'than singles and pairs ($totals).';
+  // The critic, when it is the thing distorting the number. A debuffed card contributes 0
+  // intensity AND loses its palate bonus, so a dish that looks strong scores like a weak one
+  // and the player has no way to see why from the total alone. Read off `res.scoring`, so this
+  // can only claim a card the engine actually zeroed.
+  final critic = ctx.critic;
+  final debuff = critic?.debuff;
+  if (critic != null && debuff != null) {
+    final dead = res.scoring.where((c) => c.family == debuff).toList();
+    if (dead.isNotEmpty) {
+      final who = dead.length == 1 ? dead.first.display : '${dead.length} of these ingredients';
+      return '$name — ${critic.name} zeroes $debuff, so $who adds no intensity and no palate '
+          'bonus here. Build the dish out of the other families ($totals).';
+    }
   }
 
-  final prized = res.scoring.where((c) => c.prized).toList();
-  if (prized.isNotEmpty) {
-    return '$name — ${prized.first.display} is prized, worth +$kPrizedBonus flavor on top of '
-        'its intensity, so keep it in the dish ($totals).';
-  }
-
+  // Per-card palates rank above the generic big-recipe line: "lean Sour while you are here" is
+  // a decision the player can act on, where "big recipes score more" is true of every city.
   if (palate != null && ctx.critic?.debuff != palate.perCardFlavorPctFamily) {
     final fam = palate.perCardFlavorPctFamily;
     final pct = palate.perCardFlavorPct;
@@ -225,6 +263,37 @@ String _dishWhy(ScoreResult res, ScoreContext ctx) {
     }
   }
 
+  if (_kBigPatterns.contains(res.pattern)) {
+    return '$name — reaching it is the win: the big recipes start from a far higher base '
+        'than singles and pairs ($totals).';
+  }
+
+  final prized = res.scoring.where((c) => c.prized).toList();
+  if (prized.isNotEmpty) {
+    return '$name — ${prized.first.display} is prized, worth +$kPrizedBonus flavor on top of '
+        'its intensity, so keep it in the dish ($totals).';
+  }
+
+  // A card floor or a required family is the other way a critic decides the dish. Named only
+  // when this dish is actually sitting on the constraint, so it never reads as boilerplate.
+  if (critic != null) {
+    final need = critic.requireFamily;
+    if (need != null) {
+      return '$name — ${critic.name} demands a $need ingredient in every dish, so one slot is '
+          'spoken for; spend the other four on the recipe ($totals).';
+    }
+    final floor = critic.minCards;
+    if (floor != null && res.scoring.length <= floor) {
+      return '$name — ${critic.name} makes you play at least $floor ingredients, so the extras '
+          'ride along without adding intensity ($totals).';
+    }
+    final cap = critic.maxCards;
+    if (cap != null && res.scoring.length >= cap) {
+      return '$name — ${critic.name} caps you at $cap ingredients, which is why nothing wider '
+          'than this is on the list ($totals).';
+    }
+  }
+
   if (ctx.utensils.any((u) => u.effect['retrigger_highest'] == true)) {
     return '$name — your retrigger scores the highest-intensity ingredient twice, so the '
         'single biggest card in the dish is worth more than the rest ($totals).';
@@ -237,6 +306,399 @@ String _dishWhy(ScoreResult res, ScoreContext ctx) {
 
   return '$name — a small base ($totals). Swap toward matching ranks (Pair → Three → Four '
       'of a Kind), one shared family (Flush), or a heat source to multiply up.';
+}
+
+// ---------------------------------------------------------------------------
+// Blend solver
+// ---------------------------------------------------------------------------
+
+/// One blend the player is holding, and the best play the Coach found for it in this hand.
+///
+/// Blends are the least discoverable system in the game — they edit cards instead of scoring
+/// them, they are the only route to the three secret recipes, and nothing on the service
+/// screen says what one would do until you spend it. This is the answer to "what happens if I
+/// tap this", measured rather than described.
+class BlendSuggestion {
+  const BlendSuggestion({
+    required this.blendIndex,
+    required this.blend,
+    required this.handIndexes,
+    required this.result,
+    required this.baseline,
+    required this.why,
+  });
+
+  /// Index into `run.blends` — pass straight to `applyBlend`.
+  final int blendIndex;
+  final Blend blend;
+
+  /// The cards to tap, in tap order: for a two-card verb the first is the source. Empty for a
+  /// blend that takes no targets, and empty when [result] is null.
+  final List<int> handIndexes;
+
+  /// The best dish reachable after playing the blend on [handIndexes], scored by [scoreDish]
+  /// on the hand [applyBlend] itself produced. Null when no play the Coach tried beats simply
+  /// cooking the hand as it stands.
+  final ScoreResult? result;
+
+  /// The best dish available right now, without spending the blend.
+  final int baseline;
+
+  /// Added dish score. Zero when [result] is null.
+  int get gain => result == null ? 0 : result!.score - baseline;
+
+  /// One plain-text line. When the blend helps, this names the cards to tap and quotes the
+  /// real before → after; when it does not, it says what the verb is for instead.
+  final String why;
+}
+
+/// How many candidate plays the Coach will honestly score per blend.
+///
+/// The search is bounded, not exhaustive: a two-card verb over an eight-card hand has 56
+/// ordered plays and each one costs a fresh dish search, which would put the panel past a
+/// frame. Candidates are deduplicated by the hand they produce, ordered by [_handPromise] so
+/// the most likely plays are the ones that get measured, and then capped here. A bound can
+/// only make the advice *conservative*: every number reported still comes from [scoreDish] on
+/// a hand [applyBlend] really built, so the Coach may miss a better play but can never quote
+/// one that is not there. `test/coach_test.dart` holds the frame-budget check.
+const int kMaxBlendPlays = 12;
+
+/// Dishes worth checking after a blend, given it changed the cards at [must].
+///
+/// Every subset that avoids [must] scores exactly what it scored before the blend, so it is
+/// already covered by the baseline — enumerating only the subsets that contain all of [must]
+/// is both cheaper and sufficient. It is also the play the player means: you spend a blend on
+/// the cards you intend to cook.
+///
+/// When the blend touched more cards than a dish can hold — Cold Smoke rewrites the whole hand
+/// — the constraint is dropped and everything is searched, which is a superset and so still
+/// exact, just slower. Those blends have one candidate play each, so it costs nothing that
+/// matters.
+ScoreResult? _bestDishWith(
+  List<Card> hand,
+  ScoreContext ctx,
+  Critic? critic,
+  List<int> changed,
+) {
+  final n = hand.length;
+  final maxCards = critic?.maxCards ?? 5;
+  final widest = maxCards < n ? maxCards : n;
+  final must = changed.length > widest ? const <int>[] : changed;
+  final rest = [for (var i = 0; i < n; i++) if (!must.contains(i)) i];
+
+  ScoreResult? best;
+  void consider(List<int> idxs) {
+    final cards = [for (final i in idxs) hand[i]];
+    if (dishError(cards, critic) != null) return;
+    final res = scoreDish(cards, ctx);
+    if (best == null || res.score > best!.score) best = res;
+  }
+
+  if (must.isNotEmpty) consider(must);
+  for (var extra = 1; extra <= widest - must.length; extra++) {
+    for (final combo in _combinations(rest.length, extra)) {
+      consider([...must, for (final j in combo) rest[j]]..sort());
+    }
+  }
+  return best;
+}
+
+/// The plays worth trying for [blend] over a hand of [n] cards, before deduplication.
+///
+/// Derived from the blend DSL, never from its id: `select` says how many cards it takes, and
+/// [blendReadsSource] says whether the first tap is a source (in which case order matters and
+/// a single card is not a legal play at all).
+List<List<int>> _blendPlays(int n, Blend blend) {
+  if (blend.select <= 0) return const [<int>[]];
+  final singles = [for (var i = 0; i < n; i++) [i]];
+  if (blend.select == 1) return singles;
+  if (blendReadsSource(blend)) {
+    return [
+      for (var s = 0; s < n; s++)
+        for (var t = 0; t < n; t++)
+          if (s != t) [s, t],
+    ];
+  }
+  // "Up to 2": one card is a legal, sometimes better, play than two.
+  return [
+    ...singles,
+    for (var a = 0; a < n; a++)
+      for (var b = a + 1; b < n; b++) [a, b],
+  ];
+}
+
+/// A card's identity for the purposes of scoring — everything [scoreDish] can see.
+String _cardKey(Card c) => '${c.family}:${c.rank}:${c.prized}';
+
+/// Plays `run.blends[blendIndex]` on [sel] against a scratch copy of the run's card state.
+///
+/// [applyBlend] needs a [RunState], and it only ever touches `hand`, `deck` and `blends` — no
+/// RNG, no score, no profile. So the honest way to answer "what would this blend do" is to let
+/// the real interpreter do it to copies of those three lists and put the originals back, which
+/// is what this does: the run object is the same object on the way out, holding the same list
+/// instances with the same contents. Re-implementing the blend DSL here instead would be
+/// exactly the parallel implementation the Coach exists to avoid.
+///
+/// Returns the hand the blend produced, or null if it refused the play.
+List<Card>? _handAfterBlend(RunState run, int blendIndex, List<int> sel) {
+  final hand = run.hand;
+  final deck = run.deck;
+  final blends = run.blends;
+  run.hand = List<Card>.of(hand);
+  run.deck = List<Card>.of(deck);
+  run.blends = List<Blend>.of(blends);
+  try {
+    final out = applyBlend(run, blendIndex, sel);
+    return out.error != null ? null : run.hand;
+  } finally {
+    run.hand = hand;
+    run.deck = deck;
+    run.blends = blends;
+  }
+}
+
+/// Which cards in the produced hand are ones the player did not already have.
+///
+/// A multiset difference, not a positional one, and that is load-bearing: `merge` and
+/// `discard_draw` *remove* cards, which shifts every position after them, so comparing slot by
+/// slot would report six untouched cards as changed and the constraint in [_bestDishWith]
+/// would collapse. Matching by what a card *is* — everything [scoreDish] can see — leaves
+/// exactly the rewritten, merged, duplicated and drawn cards.
+List<int> _newCardPositions(List<Card> before, List<Card> after) {
+  final pool = <String, int>{};
+  for (final c in before) {
+    final k = _cardKey(c);
+    pool[k] = (pool[k] ?? 0) + 1;
+  }
+  final out = <int>[];
+  for (var i = 0; i < after.length; i++) {
+    final k = _cardKey(after[i]);
+    final have = pool[k] ?? 0;
+    if (have > 0) {
+      pool[k] = have - 1;
+    } else {
+      out.add(i);
+    }
+  }
+  return out;
+}
+
+/// A cheap, order-only guess at how good a hand is, used to decide which candidate plays are
+/// worth a real dish search when there are more of them than [kMaxBlendPlays].
+///
+/// It claims nothing and is never shown: the winning play is re-measured by [scoreDish] either
+/// way. It just puts the plays that build toward a recipe first — most copies of one intensity
+/// (Pair through Five of a Kind), then most cards of one family (Flush), then raw intensity.
+int _handPromise(List<Card> hand) {
+  final byRank = <int, int>{};
+  final byFam = <String, int>{};
+  for (final c in hand) {
+    byRank[c.rank] = (byRank[c.rank] ?? 0) + 1;
+    byFam[c.family] = (byFam[c.family] ?? 0) + 1;
+  }
+  var ranks = 0;
+  for (final v in byRank.values) {
+    if (v > ranks) ranks = v;
+  }
+  var fams = 0;
+  for (final v in byFam.values) {
+    if (v > fams) fams = v;
+  }
+  final top = hand.map((c) => c.rank).toList()..sort((a, b) => b - a);
+  var intensity = 0;
+  for (var i = 0; i < top.length && i < 5; i++) {
+    intensity += top[i];
+  }
+  return ranks * 1000 + fams * 100 + intensity;
+}
+
+/// What each blend is for, when the Coach cannot show it doing something better right now.
+/// Authored copy, ported from the web build's `BLEND_COACH` — the engine cannot measure a
+/// verb, only a play.
+const Map<String, String> _kBlendWhy = {
+  'chili_oil': 'Turns off-family cards Spicy — completes a Flush, or feeds Spicy synergies '
+      'like the Tandoor. e.g. 4 Spicy + 1 stray, convert the stray, and a High Card (base 5) '
+      'becomes a Flush (base 35).',
+  'sea_salt': 'Same as Chili Oil but Salty — a Salty Flush, or a salt-loving build. Bridges '
+      'two families into the one Flush you were a card short of.',
+  'fermentation': '+3 intensity on the card you pick: more flavor from it, and it can reach '
+      'the rank that finishes a Straight. A 4 becomes a 7.',
+  'sharpen': 'Sets a card to intensity 10 — maximum per-card flavor, or forge a pair or trip '
+      'with the 10s you already hold.',
+  'sun_dry': 'Duplicates a card. Extra copies build toward Four and Five of a Kind and widen '
+      'the dish — copy a 9 and four 9s become five.',
+  'mise': 'Draw 2 extra ingredients: pure card advantage, and a free dig for the fifth Flush '
+      'card without spending a swap.',
+  // --- the expansion. Same job: say what the verb is FOR, not what it does. ---------------
+  'brine': 'Chili Oil in Sour — the bridge card for a Sour Flush, and Sour is the family '
+      'Kochi and Lima pay a flavor percentage on.',
+  'jaggery': 'Chili Oil in Sweet. Worth knowing which city you are in: Marrakech pays heat '
+      'for Sweet, and the Traditionalist zeroes it out entirely.',
+  'koji': 'Chili Oil in Umami — a Tokyo palate turns every converted card into +2 heat.',
+  'blanch': '-2 intensity. Sounds backwards, and it is the only way to complete a Straight '
+      'downward: holding 4-5-6-7 and a 10, blanching the 10 to an 8 does nothing, but on '
+      '5-6-7-8 and a 10 it finishes the run of five.',
+  'invert': 'Flips intensity end for end — a 2 becomes a 9. The rescue for a hand of low '
+      'cards, and the cheapest way to force a pair of 9s out of a 2 and a 9.',
+  'cold_smoke': '+1 to every ingredient you hold, no selection needed. Small per card, but it '
+      'is the whole hand: on five scoring cards that is +5 flavor before any multiplier.',
+  'julienne': 'Copies the first selected card\'s intensity onto the second. Four 10s and a '
+      'stray becomes five of a rank — a secret recipe from a hand that looked done.',
+  'infusion': 'Copies the first selected card\'s family onto the second, so you are not stuck '
+      'converting to whichever family the blend names. Any family, if you hold one.',
+  'levain': 'Family AND intensity, copied onto the second card: a true twin. The one blend '
+      'that fixes a stray which is wrong in both directions at once.',
+  'reduction': 'Boils two cards into one, combined intensity capped at 10. You lose a body, '
+      'so it is for the hand that is one big card short, never for one that is short of cards.',
+  'conserva': 'Sun-Dry twice over. Two copies is the difference between three of a rank and '
+      'five, which is the jump from base 30 to base 120.',
+  'varak': 'Gilds a card prized: +25 flavor on top of its intensity, which is more than most '
+      'common utensils add for the same coins. Put it on a card you will keep cooking.',
+  'winnow': 'Discard up to 2 and draw that many — a swap that costs no swap. Best when the '
+      'hand is close and two cards are dead weight.',
+  'forage': 'Digs the pantry for the next ingredient sharing the selected card\'s family. The '
+      'only targeted draw in the game: it is how you find the fifth Flush card on purpose.',
+};
+
+/// What one blend in the rack would do for the hand on screen — one entry per held blend,
+/// biggest gain first, ties keeping rack order.
+///
+/// The whole list comes from the live engine: [applyBlend] builds the hand, [scoreDish] scores
+/// the dish, [dishError] keeps it legal under the active critic. Nothing here estimates.
+///
+/// Never touches `run.rng`, never mutates run state that outlives the call, and never writes
+/// the profile — same contract as [suggestDishes]. See [_handAfterBlend].
+List<BlendSuggestion> suggestBlends(RunState run) {
+  if (run.blends.isEmpty || run.hand.isEmpty) return const <BlendSuggestion>[];
+  final ctx = ctxFor(run);
+  final baseline = _bestDishWith(run.hand, ctx, run.critic, const [])?.score ?? 0;
+
+  final rows = <BlendSuggestion>[];
+  for (var i = 0; i < run.blends.length; i++) {
+    final blend = run.blends[i];
+    final before = run.hand;
+
+    // Build every distinct hand this blend can produce first — applying one is a few list
+    // copies, where measuring one is a whole dish search — then measure the most promising
+    // [kMaxBlendPlays] of them.
+    final seen = <String>{};
+    final shortlist =
+        <(List<int> play, List<Card> hand, List<int> changed, int promise, int order)>[];
+    for (final play in _blendPlays(before.length, blend)) {
+      final after = _handAfterBlend(run, i, play);
+      if (after == null) continue;
+      if (!seen.add(after.map(_cardKey).join('|'))) continue;
+      final changed = _newCardPositions(before, after);
+      // A play that leaves every card exactly as it was is the blend burned for nothing.
+      if (changed.isEmpty && after.length == before.length) continue;
+      shortlist.add((play, after, changed, _handPromise(after), shortlist.length));
+    }
+    // Discovery order breaks ties explicitly: Dart's sort is unstable, and the Coach showing a
+    // different play for the same hand between two rebuilds is the kind of flicker that makes
+    // an advisor look like it is guessing.
+    shortlist.sort((a, b) => b.$4 != a.$4 ? b.$4 - a.$4 : a.$5 - b.$5);
+
+    List<int>? bestPlay;
+    ScoreResult? bestResult;
+    final take = shortlist.length < kMaxBlendPlays ? shortlist.length : kMaxBlendPlays;
+    for (var k = 0; k < take; k++) {
+      final (play, after, changed, _, _) = shortlist[k];
+      final res = _bestDishWith(after, ctx, run.critic, changed);
+      if (res == null) continue;
+      if (bestResult == null || res.score > bestResult.score) {
+        bestResult = res;
+        bestPlay = play;
+      }
+    }
+
+    final helps = bestResult != null && bestResult.score > baseline;
+    rows.add(BlendSuggestion(
+      blendIndex: i,
+      blend: blend,
+      handIndexes: helps ? List<int>.of(bestPlay!) : const <int>[],
+      result: helps ? bestResult : null,
+      baseline: baseline,
+      why: helps
+          ? _blendPlayWhy(blend, before, bestPlay!, bestResult, baseline)
+          : (_kBlendWhy[blend.id] ?? blend.desc),
+    ));
+  }
+
+  rows.sort((a, b) {
+    final byGain = b.gain - a.gain;
+    // Explicit, because Dart's sort is unstable: equal-gain blends must keep rack order or
+    // the rack and the advice list stop lining up between rebuilds.
+    return byGain != 0 ? byGain : a.blendIndex - b.blendIndex;
+  });
+  return rows;
+}
+
+/// Everything [suggestBlends] reads, as one comparable string.
+///
+/// [suggestBlends] is the most expensive thing the Coach does — it is a dish search per
+/// candidate play — and the service screen rebuilds on every card tap, where almost nothing it
+/// depends on has moved. This lets the view skip the work when the answer cannot have changed.
+///
+/// **It must cover every input, or the panel will show stale advice**, which is the one thing
+/// the Coach may never do. Those inputs are exactly: the hand, the rack, the deck (the draw
+/// verbs reach into it, and `draw_matching` can dig to the bottom), and the scoring context
+/// `ctxFor` builds — city palate, utensils, critic, Kitchen level, and the two dish-timing
+/// flags. `test/coach_test.dart` asserts that moving any one of them moves this key.
+String blendAdviceKey(RunState run) {
+  final b = StringBuffer()
+    ..write(cityOf(run).id)
+    ..write('/')
+    ..write(run.kitchenLevel)
+    ..write('/')
+    ..write(run.critic?.id ?? '-')
+    ..write('/')
+    ..write(run.dishesPlayed == 0)
+    ..write('/')
+    ..write(run.cooksLeft == 1)
+    ..write('/');
+  for (final u in run.utensils) {
+    b
+      ..write(u.id)
+      ..write(',');
+  }
+  b.write('/');
+  for (final x in run.blends) {
+    b
+      ..write(x.id)
+      ..write(',');
+  }
+  b.write('/');
+  for (final c in run.hand) {
+    b
+      ..write(_cardKey(c))
+      ..write(',');
+  }
+  b.write('/');
+  for (final c in run.deck) {
+    b
+      ..write(_cardKey(c))
+      ..write(',');
+  }
+  return b.toString();
+}
+
+/// The line for a blend that measurably improves the hand.
+///
+/// Names the cards to tap and quotes the real before → after, so the player can check the
+/// claim by tapping it. Every number in it came back from [scoreDish].
+String _blendPlayWhy(
+  Blend blend,
+  List<Card> hand,
+  List<int> play,
+  ScoreResult res,
+  int baseline,
+) {
+  final dish = kGenericNames[res.pattern] ?? res.pattern;
+  final on = play.isEmpty
+      ? ''
+      : ' on ${[for (final i in play) hand[i].display].join(' + ')}';
+  final order = play.length > 1 && blendReadsSource(blend) ? ' (in that order)' : '';
+  return '${blend.name}$on$order makes a $dish — ${res.score}, up from $baseline.';
 }
 
 // ---------------------------------------------------------------------------
@@ -269,10 +731,44 @@ class OfferValuation {
   final String category;
 }
 
-/// Flat rank weight for a one-shot blend. Blends change the *cards*, not the scoring rules,
-/// so there is no dish to re-score them on; the web build uses this same constant to slot
-/// them into the middle of the ladder rather than pretend to a measurement.
+/// Base rank weight for a one-shot blend, and the fallback for a verb this table has not met.
+///
+/// **This is a sort key, not a score, and the UI must not print it as one.** A blend changes
+/// the *cards*, not the scoring rules, so there is no dish to re-score it on: the benchmark
+/// panel is five-card dishes, and a blend played on a finished dish does nothing the panel can
+/// see. The web build uses the same flat constant. The scale is calibrated against the measured
+/// utensils around it — a solid common runs ~30 per dish, so 55 puts a consumable below a live
+/// permanent bought early and above one bought on the last service, which is the right ladder.
 const double _kBlendValue = 55;
+
+/// Rank weight for [b], from its effect DSL rather than its id, so a new blend is weighted the
+/// moment it is authored.
+///
+/// The ordering is what the blends actually do for a run, worst to best: draws find a card,
+/// rank verbs improve one, family verbs bridge one into a Flush, and the two that create
+/// material — a second body, a prized card — are how Four and Five of a Kind happen at all.
+/// `scope: 'hand'` and a second target both widen whatever the verb is, so both add.
+double blendRankWeight(Blend? b) {
+  if (b == null) return _kBlendValue;
+  final e = b.effect;
+  double base;
+  if (e['duplicate'] == true || e['set_prized'] == true) {
+    base = 75;
+  } else if (e['set_family'] != null || e['copy_family'] == true) {
+    base = 65;
+  } else if (e['copy_rank'] == true || e['merge'] == true) {
+    base = 60;
+  } else if (e['rank_set'] != null || e['rank_add'] != null || e['rank_invert'] == true) {
+    base = 50;
+  } else if (e['draw'] != null || e['discard_draw'] == true || e['draw_matching'] == true) {
+    base = 40;
+  } else {
+    base = _kBlendValue;
+  }
+  if (e['scope'] == 'hand') base += 10;
+  if (b.select > 1) base += 5;
+  return base;
+}
 
 /// JS `Math.round` — `floor(x + 0.5)`, not Dart's round-half-away-from-zero.
 int _jsRound(double n) => (n + 0.5).floor();
@@ -408,53 +904,6 @@ _Impact? _offerImpact(RunState run, Offer o, List<_Bench> benches) {
   return best;
 }
 
-/// What each blend is for. The engine cannot measure these — they rewrite cards rather than
-/// scoring rules — so this is authored copy, ported from the web build's `BLEND_COACH`.
-const Map<String, String> _kBlendWhy = {
-  'chili_oil': 'Turns off-family cards Spicy — completes a Flush, or feeds Spicy synergies '
-      'like the Tandoor. e.g. 4 Spicy + 1 stray, convert the stray, and a High Card (base 5) '
-      'becomes a Flush (base 35).',
-  'sea_salt': 'Same as Chili Oil but Salty — a Salty Flush, or a salt-loving build. Bridges '
-      'two families into the one Flush you were a card short of.',
-  'fermentation': '+3 intensity on the card you pick: more flavor from it, and it can reach '
-      'the rank that finishes a Straight. A 4 becomes a 7.',
-  'sharpen': 'Sets a card to intensity 10 — maximum per-card flavor, or forge a pair or trip '
-      'with the 10s you already hold.',
-  'sun_dry': 'Duplicates a card. Extra copies build toward Four and Five of a Kind and widen '
-      'the dish — copy a 9 and four 9s become five.',
-  'mise': 'Draw 2 extra ingredients: pure card advantage, and a free dig for the fifth Flush '
-      'card without spending a swap.',
-  // --- the expansion. Same job: say what the verb is FOR, not what it does. ---------------
-  'brine': 'Chili Oil in Sour — the bridge card for a Sour Flush, and Sour is the family '
-      'Kochi and Lima pay a flavor percentage on.',
-  'jaggery': 'Chili Oil in Sweet. Worth knowing which city you are in: Marrakech pays heat '
-      'for Sweet, and the Traditionalist zeroes it out entirely.',
-  'koji': 'Chili Oil in Umami — a Tokyo palate turns every converted card into +2 heat.',
-  'blanch': '-2 intensity. Sounds backwards, and it is the only way to complete a Straight '
-      'downward: holding 4-5-6-7 and a 10, blanching the 10 to an 8 does nothing, but on '
-      '5-6-7-8 and a 10 it finishes the run of five.',
-  'invert': 'Flips intensity end for end — a 2 becomes a 9. The rescue for a hand of low '
-      'cards, and the cheapest way to force a pair of 9s out of a 2 and a 9.',
-  'cold_smoke': '+1 to every ingredient you hold, no selection needed. Small per card, but it '
-      'is the whole hand: on five scoring cards that is +5 flavor before any multiplier.',
-  'julienne': 'Copies the first selected card\'s intensity onto the second. Four 10s and a '
-      'stray becomes five of a rank — a secret recipe from a hand that looked done.',
-  'infusion': 'Copies the first selected card\'s family onto the second, so you are not stuck '
-      'converting to whichever family the blend names. Any family, if you hold one.',
-  'levain': 'Family AND intensity, copied onto the second card: a true twin. The one blend '
-      'that fixes a stray which is wrong in both directions at once.',
-  'reduction': 'Boils two cards into one, combined intensity capped at 10. You lose a body, '
-      'so it is for the hand that is one big card short, never for one that is short of cards.',
-  'conserva': 'Sun-Dry twice over. Two copies is the difference between three of a rank and '
-      'five, which is the jump from base 30 to base 120.',
-  'varak': 'Gilds a card prized: +25 flavor on top of its intensity, which is more than most '
-      'common utensils add for the same coins. Put it on a card you will keep cooking.',
-  'winnow': 'Discard up to 2 and draw that many — a swap that costs no swap. Best when the '
-      'hand is close and two cards are dead weight.',
-  'forage': 'Digs the pantry for the next ingredient sharing the selected card\'s family. The '
-      'only targeted draw in the game: it is how you find the fifth Flush card on purpose.',
-};
-
 /// A valuation before the sort, carrying its original position for a stable tie-break.
 class _Ranked {
   const _Ranked(this.valuation, this.index);
@@ -498,11 +947,16 @@ List<OfferValuation> rankOffers(RunState run, List<Offer> offers) {
           'is the run\'s scaling engine: worth about $perDish per dish now, on the ~$left '
           'dishes you have left, and the next Festival compounds on top of it.$example';
     } else if (o.kind == 'blend') {
-      // One-shot, and its value is entirely in the hand it is played on — the honest label
-      // is situational even when it is the correct buy.
-      category = 'situational';
-      value = _kBlendValue;
-      why = _kBlendWhy[o.id] ?? o.desc;
+      // One-shot, and its value is entirely in the hand it is played on. It used to be filed
+      // as `situational` — the same bucket as a utensil whose condition never fires — which
+      // read as "don't bother" for the system the game most needs a new player to try. It gets
+      // its own category and a weight that separates a Conserva from a Winnowing, and the UI
+      // does not print the weight, because it is a rank key and not dish score.
+      final b = kBlendById[o.id];
+      category = 'consumable';
+      value = blendRankWeight(b);
+      why = '${_kBlendWhy[o.id] ?? o.desc} One-shot: it edits the cards in your hand, so it is '
+          'worth most on the hand that is one card short of a recipe.';
     } else {
       final u = kUtensilById[o.id];
       final effect = u?.effect ?? const <String, Object?>{};

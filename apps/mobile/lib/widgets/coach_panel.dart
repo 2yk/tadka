@@ -15,7 +15,7 @@ import 'package:game_core/game_core.dart' as gc;
 import '../theme.dart';
 import 'juice.dart';
 
-class CoachPanel extends StatelessWidget {
+class CoachPanel extends StatefulWidget {
   const CoachPanel({
     required this.run,
     required this.suggestions,
@@ -30,8 +30,36 @@ class CoachPanel extends StatelessWidget {
   final List<int> selected;
 
   @override
+  State<CoachPanel> createState() => _CoachPanelState();
+}
+
+class _CoachPanelState extends State<CoachPanel> {
+  /// Blend advice, memoised on [gc.blendAdviceKey].
+  ///
+  /// `suggestBlends` runs a dish search per candidate play, which is an order of magnitude
+  /// more work than the dish ladder, and this panel rebuilds on every card tap — where the
+  /// hand, the rack, the deck and the scoring context have all stayed exactly as they were.
+  /// The key covers every input the solver reads (game_core owns it, and a test pins that),
+  /// so a hit is a genuinely identical question and a miss recomputes from the live engine.
+  String? _blendKey;
+  List<gc.BlendSuggestion> _blends = const [];
+
+  List<gc.BlendSuggestion> _blendAdvice() {
+    final key = gc.blendAdviceKey(widget.run);
+    if (key != _blendKey) {
+      _blendKey = key;
+      _blends = gc.suggestBlends(widget.run);
+    }
+    return _blends;
+  }
+
+  @override
   Widget build(BuildContext context) {
-    if (suggestions.isEmpty) {
+    final run = widget.run;
+    final suggestions = widget.suggestions;
+    final blends = _blendAdvice();
+
+    if (suggestions.isEmpty && blends.isEmpty) {
       return Center(
         child: Text(
           run.critic == null
@@ -45,6 +73,13 @@ class CoachPanel extends StatelessWidget {
 
     final cityId = gc.cityOf(run).id;
     final needed = run.target - run.score;
+    final best = suggestions.isEmpty ? 0 : suggestions.first.result.score;
+
+    // A blend that beats everything cookable right now IS the play, so it leads. The rest
+    // drop below the ladder as reference — a blend you cannot use well yet is still a
+    // mechanic worth learning, and nothing else in the game explains it.
+    final leading = [for (final b in blends) if (b.result != null && b.result!.score > best) b];
+    final trailing = [for (final b in blends) if (!leading.contains(b)) b];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -61,21 +96,37 @@ class CoachPanel extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         Expanded(
-          child: ListView.builder(
+          child: ListView(
             padding: EdgeInsets.zero,
-            itemCount: suggestions.length,
-            itemBuilder: (context, i) {
-              final s = suggestions[i];
-              final isLoaded = _sameSelection(s.handIndexes, selected);
-              return _SuggestionRow(
-                suggestion: s,
-                cityId: cityId,
-                rank: i,
-                clears: needed > 0 && s.result.score >= needed,
-                loaded: isLoaded,
-                onTap: () => onLoad(s.handIndexes),
-              );
-            },
+            children: [
+              for (final b in leading)
+                BlendAdviceRow(
+                  advice: b,
+                  loaded: _sameSelection(b.handIndexes, widget.selected),
+                  onTap: () => widget.onLoad(b.handIndexes),
+                ),
+              for (var i = 0; i < suggestions.length; i++)
+                _SuggestionRow(
+                  suggestion: suggestions[i],
+                  cityId: cityId,
+                  rank: leading.isEmpty ? i : i + 1,
+                  clears: needed > 0 && suggestions[i].result.score >= needed,
+                  loaded: _sameSelection(suggestions[i].handIndexes, widget.selected),
+                  onTap: () => widget.onLoad(suggestions[i].handIndexes),
+                ),
+              if (trailing.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Text('⚗️ YOUR BLENDS', style: T.label.copyWith(fontSize: 9)),
+                const SizedBox(height: 4),
+                for (final b in trailing)
+                  BlendAdviceRow(
+                    advice: b,
+                    loaded: b.handIndexes.isNotEmpty &&
+                        _sameSelection(b.handIndexes, widget.selected),
+                    onTap: b.handIndexes.isEmpty ? null : () => widget.onLoad(b.handIndexes),
+                  ),
+              ],
+            ],
           ),
         ),
       ],
@@ -83,12 +134,86 @@ class CoachPanel extends StatelessWidget {
   }
 
   static bool _sameSelection(List<int> a, List<int> b) {
-    if (a.length != b.length) return false;
+    if (a.isEmpty || a.length != b.length) return false;
+    final sortedA = List<int>.of(a)..sort();
     final sortedB = List<int>.of(b)..sort();
-    for (var i = 0; i < a.length; i++) {
-      if (a[i] != sortedB[i]) return false;
+    for (var i = 0; i < sortedA.length; i++) {
+      if (sortedA[i] != sortedB[i]) return false;
     }
     return true;
+  }
+}
+
+/// One blend in the rack, and what the engine says it would do for this hand.
+///
+/// Tapping loads the exact cards the advice names, so the player's next tap is the blend chip
+/// itself — the same "show me, don't tell me" grammar as the dish rows.
+class BlendAdviceRow extends StatelessWidget {
+  const BlendAdviceRow({
+    required this.advice,
+    required this.loaded,
+    required this.onTap,
+    super.key,
+  });
+
+  final gc.BlendSuggestion advice;
+  final bool loaded;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final helps = advice.result != null;
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        margin: const EdgeInsets.only(bottom: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        decoration: BoxDecoration(
+          color: loaded ? T.panel2 : T.panel,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: loaded ? T.brass : (helps ? T.umami : T.line),
+            width: loaded || helps ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            const Padding(
+              padding: EdgeInsets.only(right: 6),
+              child: Text('⚗️', style: TextStyle(fontSize: 12)),
+            ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(advice.blend.name, style: T.dish(14)),
+                  const SizedBox(height: 2),
+                  Text(
+                    advice.why,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: T.bodyDim.copyWith(fontSize: 10.5, height: 1.2),
+                  ),
+                ],
+              ),
+            ),
+            if (helps) ...[
+              const SizedBox(width: 8),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(formatScore(advice.result!.score), style: T.score(16)),
+                  Text('+${formatScore(advice.gain)}',
+                      style: T.label.copyWith(fontSize: 8.5, color: T.good)),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -197,7 +322,12 @@ class CoachBuyHint extends StatelessWidget {
     // Coin utensils genuinely measure at zero here — the valuation is denominated in dish
     // score and they pay in coins. Showing "+0" would read as "worthless", which is wrong,
     // so economy buys get the reason instead of the number.
-    final showNumber = v.category != 'economy' && v.marginalValue > 0;
+    //
+    // Blends are excluded for the opposite reason: their number is a rank weight, not dish
+    // score (see `blendRankWeight`), and printing "+55" beside a measured "+360" claims a
+    // measurement the engine never made. The Coach may not state a number the game won't pay.
+    final showNumber =
+        v.category != 'economy' && v.category != 'consumable' && v.marginalValue > 0;
     return Container(
       margin: const EdgeInsets.only(top: 7),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),

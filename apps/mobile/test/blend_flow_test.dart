@@ -42,13 +42,15 @@ Widget _wrap(GameController c) => MaterialApp(
 
 GameController _controllerWithBlend(String blendId) {
   final c = GameController();
-  // Coastal ships with a Sun-Dry, which is the cleanest way to get a blend into a fresh run
-  // without simulating a whole bazaar purchase.
   c.deckId = 'coastal';
   c.startRun('BLEND-TEST');
-  if (c.run!.blends.every((b) => b.id != blendId)) {
-    c.run!.blends.add(gc.kBlendById[blendId]!);
-  }
+  // Exactly one blend in the rack. Every deck now opens with one or two so the mechanic is
+  // discoverable, and the rack is a horizontal scroller — so leaving the deck's own blends in
+  // puts the chip under test off the right edge of a 390pt phone, where `tap()` lands on
+  // whichever chip is actually at those coordinates. Each test drives one blend.
+  c.run!.blends
+    ..clear()
+    ..add(gc.kBlendById[blendId]!);
   return c;
 }
 

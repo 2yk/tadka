@@ -108,6 +108,14 @@ const String kBlendNeedsTwo = 'Select 2 ingredients — the first one is the sou
 /// Effect keys that read the first selected card as a source rather than editing it.
 const Set<String> _sourceReading = {'copy_family', 'copy_rank', 'merge'};
 
+/// Does [b] read its first selected card as a source rather than editing it?
+///
+/// The two-card verbs ("make this one like that one") need two targets and care which tap
+/// came first, so the rack labels them differently and the Coach enumerates their plays as
+/// ordered pairs. Exported because three callers ask the same question and a fourth copy of
+/// the key list is how they drift apart.
+bool blendReadsSource(Blend b) => b.effect.keys.any(_sourceReading.contains);
+
 int _clampRank(int r) => r < 1 ? 1 : (r > 10 ? 10 : r);
 
 /// Applies `run.blends[blendIndex]` to the hand cards at [handIndexes], in selection order.

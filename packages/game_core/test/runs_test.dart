@@ -386,7 +386,13 @@ RunState _pinnedRun({required String seed, required int stake, required String d
 const _portedBlendIds = {'chili_oil', 'sea_salt', 'fermentation', 'sun_dry', 'sharpen', 'mise'};
 
 void main() {
+  final showAllBefore = kShowAllContent;
   setUpAll(() {
+    // The JS engine has no notion of a "show everything" build: its `isUnlocked` gates on the
+    // starter pool, so the recorded shop rolls are rolls against that pool. Forcing the flag
+    // off here keeps these traces testing the port instead of testing the switch —
+    // `content_visibility_test.dart` owns the switch itself, in both positions.
+    kShowAllContent = false;
     activeUtensilCatalog =
         kUtensils.where((u) => _portedUtensilIds.contains(u.id)).toList();
     activeBlendCatalog = kBlends.where((b) => _portedBlendIds.contains(b.id)).toList();
@@ -394,11 +400,17 @@ void main() {
     // engine knows must be the seven a recorded roll chooses between. [kPortedFestivals] is
     // that list by construction — it is the head of [kFestivals], not a copy of it.
     activeFestivalCatalog = kPortedFestivals;
+    // And a fourth: `newRun` copies `deckCfg.startBlends` into `run.blends`, which every
+    // recorded step snapshots. The live decks each open with a blend so the rack is
+    // discoverable; the JS build's do not.
+    activeDeckCatalog = kPortedDecks;
   });
   tearDownAll(() {
+    kShowAllContent = showAllBefore;
     activeUtensilCatalog = kUtensils;
     activeBlendCatalog = kBlends;
     activeFestivalCatalog = kFestivals;
+    activeDeckCatalog = kDecks;
   });
 
   final file = File('test/vectors.json');
