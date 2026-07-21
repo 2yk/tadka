@@ -38,6 +38,16 @@ class Rng {
 
   int _a;
 
+  /// The generator's position in its sequence. Opaque — save it, restore it, don't reason
+  /// about the number.
+  ///
+  /// Exists so a saved run can resume mid-sequence. Determinism is the seed contract this
+  /// codebase is built on, so restoring a run has to continue the identical draw sequence
+  /// rather than restart it and re-deal cards the player has already seen.
+  int get state => _a;
+
+  void restore(int state) => _a = state & _mask32;
+
   /// JS `mulberry32` — returns a double in [0, 1).
   double next() {
     _a = (_a + 0x6D2B79F5) & _mask32;

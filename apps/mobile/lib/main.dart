@@ -3,6 +3,8 @@
 /// All rules live in `package:game_core`; this app is presentation only.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:game_core/game_core.dart' as gc;
@@ -54,7 +56,7 @@ class GameRoot extends StatefulWidget {
   State<GameRoot> createState() => _GameRootState();
 }
 
-class _GameRootState extends State<GameRoot> {
+class _GameRootState extends State<GameRoot> with WidgetsBindingObserver {
   late final GameController _controller = GameController(widget.prefs);
   final _particles = ParticleController();
   final _shake = ShakeController();
@@ -63,12 +65,31 @@ class _GameRootState extends State<GameRoot> {
   void initState() {
     super.initState();
     _controller.addListener(_onChange);
+    WidgetsBinding.instance.addObserver(this);
+    // Pick up an interrupted run and put the player straight back where they were. A route
+    // is 24 services; being dropped at the menu after the OS reclaimed the app would throw
+    // away half an hour of someone's evening.
+    final saved = _controller.loadSavedRun();
+    if (saved != null) _controller.resumeRun(saved);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // The last moment we are reliably told about before the OS may reclaim the process.
+    // Actions already save as they happen; this covers the gap mid-animation or mid-thought.
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached ||
+        state == AppLifecycleState.hidden) {
+      unawaited(_controller.flush());
+    }
   }
 
   void _onChange() => setState(() {});
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _controller.removeListener(_onChange);
     _controller.dispose();
     super.dispose();

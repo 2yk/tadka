@@ -6,6 +6,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:game_core/game_core.dart' as gc;
@@ -43,6 +44,7 @@ class GameController extends ChangeNotifier {
   }
 
   static const _coachKey = 'tadka_coach';
+  static const _runKey = 'tadka_run_v1';
   static const _seenHelpKey = 'tadka_seen_help';
   final SharedPreferences? _prefs;
 
@@ -99,6 +101,7 @@ class GameController extends ChangeNotifier {
     lastResult = null;
     errorMessage = null;
     _drainToasts();
+    _saveRun();
     // A first-time player should meet the rules before the first hand, not after losing to
     // them. Shown once ever; the ? button is always there afterwards.
     if (needsRules) {
@@ -183,6 +186,7 @@ class GameController extends ChangeNotifier {
     lastResult = out.result;
     selected.clear();
     _drainToasts();
+    _saveRun();
     notifyListeners();
     return out;
   }
@@ -203,6 +207,7 @@ class GameController extends ChangeNotifier {
     }
     selected.clear();
     errorMessage = null;
+    _saveRun();
     notifyListeners();
     return null;
   }
@@ -216,6 +221,7 @@ class GameController extends ChangeNotifier {
     } else {
       selected.clear();
       errorMessage = null;
+      _saveRun();
     }
     notifyListeners();
   }
@@ -236,6 +242,7 @@ class GameController extends ChangeNotifier {
       phase = Phase.bazaar;
     }
     _drainToasts();
+    _saveRun();
     notifyListeners();
   }
 
@@ -244,6 +251,7 @@ class GameController extends ChangeNotifier {
     if (isDaily) recordDaily(now(), run!.totalScore);
     phase = Phase.summary;
     _drainToasts();
+    _saveRun();
     notifyListeners();
   }
 
@@ -262,6 +270,7 @@ class GameController extends ChangeNotifier {
     r.coins -= offer.cost;
     offers!.remove(offer);
     _drainToasts();
+    _saveRun();
     notifyListeners();
   }
 
@@ -273,6 +282,7 @@ class GameController extends ChangeNotifier {
     r.coins -= rerollCost;
     r.rerolls++;
     offers = gc.rollOffers(r);
+    _saveRun();
     notifyListeners();
   }
 
@@ -281,6 +291,7 @@ class GameController extends ChangeNotifier {
     final u = r.utensils[index];
     r.coins += (u.cost / 2).floor();
     r.utensils.removeAt(index);
+    _saveRun();
     notifyListeners();
   }
 
@@ -293,6 +304,7 @@ class GameController extends ChangeNotifier {
       selected.clear();
       lastResult = null;
     }
+    _saveRun();
     notifyListeners();
   }
 
@@ -335,6 +347,7 @@ class GameController extends ChangeNotifier {
     selected.clear();
     lastResult = null;
     _drainToasts();
+    _saveRun();
     notifyListeners();
   }
 
@@ -355,4 +368,60 @@ class GameController extends ChangeNotifier {
   }
 
   void _drainToasts() => toasts.addAll(gc.drainUnlockQueue());
+
+  // ---- run persistence
+  //
+  // A full route is 24 services. Phones background apps and the OS reclaims them without
+  // warning, so a run that lives only in memory is one the player eventually loses through no
+  // fault of their own — which destroys the exact thing they were invested in.
+  //
+  // Saved after every action rather than only on backgrounding: a process can be killed
+  // without ever being told, and serialising a run costs well under a frame.
+
+  void _saveRun() {
+    final r = run;
+    final p = _prefs;
+    if (p == null) return;
+    if (r == null || !gc.isResumable(r)) {
+      unawaited(p.remove(_runKey));
+      return;
+    }
+    unawaited(p.setString(_runKey, jsonEncode(gc.runToJson(r))));
+  }
+
+  /// The run waiting to be resumed, if there is one. Read once at startup.
+  gc.RunState? loadSavedRun() {
+    final raw = _prefs?.getString(_runKey);
+    if (raw == null) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return null;
+      final restored = gc.runFromJson(decoded.cast<String, Object?>());
+      if (restored == null || !gc.isResumable(restored)) return null;
+      return restored;
+    } on Object {
+      // A corrupt save is data, not a bug. Never let it take the app down on launch.
+      return null;
+    }
+  }
+
+  /// Puts a restored run back on screen, straight into the service the player left.
+  void resumeRun(gc.RunState restored) {
+    run = restored;
+    isDaily = restored.seed.startsWith('DAILY-');
+    selected.clear();
+    lastResult = null;
+    errorMessage = null;
+    offers = null;
+    phase = Phase.service;
+    notifyListeners();
+  }
+
+  /// Called when the app is backgrounded — the last chance before the OS may reclaim it.
+  Future<void> flush() async {
+    final p = _prefs;
+    if (p == null) return;
+    _saveRun();
+    await p.reload();
+  }
 }
