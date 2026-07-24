@@ -10,8 +10,10 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../daily.dart';
 import '../game_controller.dart';
 import '../theme.dart';
-import '../widgets/juice.dart';
+import '../widgets/ambient.dart';
 import '../widgets/buttons.dart';
+import '../widgets/ember_field.dart';
+import '../widgets/juice.dart';
 
 /// Mints a run's seed. This is the ONE place entropy enters a run — everything downstream
 /// is seeded, so every run stays exactly reproducible.
@@ -46,12 +48,15 @@ class _StartScreenState extends State<StartScreen> {
     final maxStake = gc.maxStake(c.deckId);
 
     return SafeArea(
-      child: SingleChildScrollView(
+      child: Stack(
+        children: [
+          const Positioned.fill(child: EmberField()),
+          SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(18, 28, 18, 18),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Center(child: Text('SPICE ROUTE', style: T.dish(34, color: T.brass))),
+            const Center(child: _ShimmerTitle('SPICE ROUTE')),
             const SizedBox(height: 2),
             Center(child: Text('A DELICIOUS ROGUELIKE', style: T.label)),
             const SizedBox(height: 26),
@@ -151,16 +156,19 @@ class _StartScreenState extends State<StartScreen> {
               ],
             ),
             const SizedBox(height: 12),
-            PressableButton(
-              height: 60,
-              onTap: () => c.startRun(randomSeed()),
-              child: const Text(
-                '▶  PLAY',
-                style: TextStyle(
-                  fontSize: 19,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1.6,
-                  color: T.inkDark,
+            _Breathing(
+              child: PressableButton(
+                height: 60,
+                glow: true,
+                onTap: () => c.startRun(randomSeed()),
+                child: const Text(
+                  '▶  PLAY',
+                  style: TextStyle(
+                    fontSize: 19,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.6,
+                    color: T.inkDark,
+                  ),
                 ),
               ),
             ),
@@ -169,9 +177,117 @@ class _StartScreenState extends State<StartScreen> {
             const Center(child: _BuildStamp()),
           ],
         ),
+          ),
+        ],
       ),
     );
   }
+}
+
+/// The title in moving lantern light: a cream highlight slides along brass lettering.
+/// Frozen mid-shimmer when ambient motion is off — still gradient-lit, never flat.
+class _ShimmerTitle extends StatefulWidget {
+  const _ShimmerTitle(this.text);
+
+  final String text;
+
+  @override
+  State<_ShimmerTitle> createState() => _ShimmerTitleState();
+}
+
+class _ShimmerTitleState extends State<_ShimmerTitle> with TickerProviderStateMixin {
+  AnimationController? _c;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final animate = ambientEnabled(context);
+    if (animate && _c == null) {
+      _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 4200))
+        ..repeat();
+    } else if (!animate && _c != null) {
+      _c!.dispose();
+      _c = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _c?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+        animation: _c ?? const AlwaysStoppedAnimation<double>(0.35),
+        builder: (context, _) {
+          final t = _c?.value ?? 0.35;
+          final dx = -1.6 + 3.2 * t;
+          return ShaderMask(
+            blendMode: BlendMode.srcIn,
+            shaderCallback: (r) => LinearGradient(
+              begin: Alignment(dx - 1, -0.4),
+              end: Alignment(dx + 1, 0.4),
+              colors: const [T.brass, T.brassLight, T.cream, T.brassLight, T.brass],
+              stops: const [0.0, 0.38, 0.5, 0.62, 1.0],
+            ).createShader(r),
+            child: Text(widget.text, style: T.dish(34, color: Colors.white)),
+          );
+        },
+      );
+}
+
+/// A slow pulse of brass light behind its child. The PLAY button breathes so the screen
+/// has a heartbeat even when nothing is touched.
+class _Breathing extends StatefulWidget {
+  const _Breathing({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_Breathing> createState() => _BreathingState();
+}
+
+class _BreathingState extends State<_Breathing> with TickerProviderStateMixin {
+  AnimationController? _c;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final animate = ambientEnabled(context);
+    if (animate && _c == null) {
+      _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 3000))
+        ..repeat();
+    } else if (!animate && _c != null) {
+      _c!.dispose();
+      _c = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _c?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+        animation: _c ?? const AlwaysStoppedAnimation<double>(0.0),
+        builder: (context, child) {
+          final t = _c?.value ?? 0.0;
+          final a = 0.10 + 0.14 * (0.5 + 0.5 * sin(t * 2 * pi));
+          return DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(color: T.brass.withValues(alpha: a), blurRadius: 26, spreadRadius: 2),
+              ],
+            ),
+            child: child,
+          );
+        },
+        child: widget.child,
+      );
 }
 
 class _Chip extends StatelessWidget {

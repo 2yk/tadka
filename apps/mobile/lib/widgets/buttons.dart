@@ -18,6 +18,7 @@ class PressableButton extends StatefulWidget {
     required this.onTap,
     this.enabled = true,
     this.filled = true,
+    this.glow = false,
     this.height = 54,
     super.key,
   });
@@ -28,6 +29,10 @@ class PressableButton extends StatefulWidget {
 
   /// Brass gradient when true, outlined when false.
   final bool filled;
+
+  /// Brass halo behind the face while enabled — reserved for the primary action, so the
+  /// one button that advances the game is always the brightest thing near the thumb.
+  final bool glow;
   final double height;
 
   @override
@@ -99,6 +104,14 @@ class _PressableButtonState extends State<PressableButton> {
                     border: widget.filled
                         ? null
                         : Border.all(color: const Color(0xFF443C68), width: 2),
+                    boxShadow: [
+                      if (widget.glow && widget.enabled && !_down)
+                        BoxShadow(
+                          color: T.brass.withValues(alpha: 0.40),
+                          blurRadius: 18,
+                          spreadRadius: 1,
+                        ),
+                    ],
                   ),
                   child: DefaultTextStyle.merge(
                     style: TextStyle(color: widget.filled ? T.inkDark : T.ink),

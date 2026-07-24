@@ -16,6 +16,72 @@ import 'package:flutter/material.dart';
 import 'package:game_core/game_core.dart' as gc;
 
 import '../theme.dart';
+import 'ambient.dart';
+
+/// Holographic foil sweep on prized cards.
+///
+/// A prized card is worth +25 flavour and this is the only place that status is visible,
+/// so it earns the collectible-card treatment: a diagonal band of cream-brass-umami light
+/// slowly crossing the face. Ambient, so under reduced motion or in tests it freezes as a
+/// static sheen instead of animating.
+class FoilShimmer extends StatefulWidget {
+  const FoilShimmer({super.key});
+
+  @override
+  State<FoilShimmer> createState() => _FoilShimmerState();
+}
+
+class _FoilShimmerState extends State<FoilShimmer> with TickerProviderStateMixin {
+  AnimationController? _c;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final animate = ambientEnabled(context);
+    if (animate && _c == null) {
+      _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 2600))
+        ..repeat();
+    } else if (!animate && _c != null) {
+      _c!.dispose();
+      _c = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _c?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: AnimatedBuilder(
+        animation: _c ?? const AlwaysStoppedAnimation<double>(0.35),
+        builder: (context, _) {
+          final t = _c?.value ?? 0.35;
+          final dx = -1.6 + 3.2 * t;
+          return DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment(dx - 0.9, -1),
+                end: Alignment(dx + 0.9, 1),
+                colors: [
+                  Colors.transparent,
+                  T.cream.withValues(alpha: 0.22),
+                  T.brass.withValues(alpha: 0.26),
+                  T.umami.withValues(alpha: 0.14),
+                  Colors.transparent,
+                ],
+                stops: const [0.0, 0.38, 0.5, 0.62, 1.0],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
 
 /// The "sunburst" — the one signature motif, behind every ingredient, badge and the icon.
 class _SunburstPainter extends CustomPainter {
@@ -112,7 +178,14 @@ class IngredientCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: T.parch,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: selected ? T.brass : T.parchDark, width: selected ? 3 : 2),
+          border: Border.all(
+            color: selected
+                ? T.brass
+                : card.prized
+                    ? T.brass.withValues(alpha: 0.75)
+                    : T.parchDark,
+            width: selected ? 3 : 2,
+          ),
           boxShadow: [
             if (selected)
               BoxShadow(color: T.brass.withValues(alpha: 0.55), blurRadius: 16, spreadRadius: 1)
@@ -231,6 +304,7 @@ class IngredientCard extends StatelessWidget {
                     ],
                   ),
                 ),
+                if (card.prized) const Positioned.fill(child: FoilShimmer()),
                 if (debuffed)
                   Center(
                     child: Transform.rotate(

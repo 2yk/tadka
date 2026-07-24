@@ -189,7 +189,15 @@ class _P {
   final Duration born;
 }
 
-/// Full-screen particle layer. Bursts are requested in global coordinates.
+class _Ring {
+  _Ring(this.origin, this.color, this.born);
+
+  final Offset origin;
+  final Color color;
+  final Duration born;
+}
+
+/// Full-screen particle layer. Bursts and rings are requested in global coordinates.
 class ParticleField extends StatefulWidget {
   const ParticleField({required this.controller, required this.child, super.key});
 
@@ -202,17 +210,28 @@ class ParticleField extends StatefulWidget {
 
 class ParticleController extends ChangeNotifier {
   final List<({Offset at, Color color})> _pending = [];
+  final List<({Offset at, Color color})> _pendingRings = [];
 
   /// Request a burst at a global position.
   void burst(Offset globalPosition, Color color) {
     _pending.add((at: globalPosition, color: color));
     notifyListeners();
   }
+
+  /// Request an expanding shockwave ring — the payoff mark for a landed score.
+  void ring(Offset globalPosition, Color color) {
+    _pendingRings.add((at: globalPosition, color: color));
+    notifyListeners();
+  }
 }
 
 class _ParticleFieldState extends State<ParticleField> with SingleTickerProviderStateMixin {
-  late final Ticker _ticker = createTicker(_tick);
+  /// Created on first use, NOT `late final`: a lazy-final first touched in dispose()
+  /// (possible when no effect ever fired) would run createTicker during teardown, where
+  /// the ancestor lookup it does is illegal.
+  Ticker? _ticker;
   final List<_P> _live = [];
+  final List<_Ring> _rings = [];
   final _rng = math.Random();
   Duration _now = Duration.zero;
 
@@ -220,13 +239,13 @@ class _ParticleFieldState extends State<ParticleField> with SingleTickerProvider
   void initState() {
     super.initState();
     widget.controller.addListener(_drain);
-    _ticker.start();
   }
 
   void _drain() {
     if (!mounted) return;
     if (MediaQuery.maybeDisableAnimationsOf(context) ?? false) {
       widget.controller._pending.clear();
+      widget.controller._pendingRings.clear();
       return;
     }
     final box = context.findRenderObject() as RenderBox?;
@@ -245,19 +264,39 @@ class _ParticleFieldState extends State<ParticleField> with SingleTickerProvider
       }
     }
     widget.controller._pending.clear();
+    for (final r in widget.controller._pendingRings) {
+      final local = box?.globalToLocal(r.at) ?? r.at;
+      _rings.add(_Ring(local, r.color, _now));
+    }
+    widget.controller._pendingRings.clear();
+
+    // The ticker runs only while something is alive. An always-on ticker schedules frames
+    // forever, which drains battery repainting nothing and hangs pumpAndSettle in tests.
+    if ((_live.isNotEmpty || _rings.isNotEmpty) && !(_ticker?.isActive ?? false)) {
+      _now = Duration.zero;
+      for (var i = 0; i < _live.length; i++) {
+        _live[i] = _P(_live[i].origin, _live[i].angle, _live[i].dist, _live[i].color,
+            _live[i].size, Duration.zero);
+      }
+      for (var i = 0; i < _rings.length; i++) {
+        _rings[i] = _Ring(_rings[i].origin, _rings[i].color, Duration.zero);
+      }
+      (_ticker ??= createTicker(_tick)).start();
+    }
   }
 
   void _tick(Duration elapsed) {
     _now = elapsed;
-    if (_live.isEmpty) return;
     _live.removeWhere((p) => (elapsed - p.born) > Motion.burst);
+    _rings.removeWhere((r) => (elapsed - r.born) > Motion.ring);
+    if (_live.isEmpty && _rings.isEmpty) _ticker?.stop();
     setState(() {});
   }
 
   @override
   void dispose() {
     widget.controller.removeListener(_drain);
-    _ticker.dispose();
+    _ticker?.dispose();
     super.dispose();
   }
 
@@ -266,10 +305,10 @@ class _ParticleFieldState extends State<ParticleField> with SingleTickerProvider
     return Stack(
       children: [
         widget.child,
-        if (_live.isNotEmpty)
+        if (_live.isNotEmpty || _rings.isNotEmpty)
           Positioned.fill(
             child: IgnorePointer(
-              child: CustomPaint(painter: _ParticlePainter(_live, _now)),
+              child: CustomPaint(painter: _ParticlePainter(_live, _rings, _now)),
             ),
           ),
       ],
@@ -278,13 +317,35 @@ class _ParticleFieldState extends State<ParticleField> with SingleTickerProvider
 }
 
 class _ParticlePainter extends CustomPainter {
-  _ParticlePainter(this.particles, this.now);
+  _ParticlePainter(this.particles, this.rings, this.now);
 
   final List<_P> particles;
+  final List<_Ring> rings;
   final Duration now;
 
   @override
   void paint(Canvas canvas, Size size) {
+    for (final r in rings) {
+      final t = ((now - r.born).inMilliseconds / Motion.ring.inMilliseconds).clamp(0.0, 1.0);
+      final e = Curves.easeOutCubic.transform(t);
+      final alpha = (1 - t) * 0.85;
+      canvas.drawCircle(
+        r.origin,
+        14 + 86 * e,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = (4.5 * (1 - t)).clamp(0.8, 4.5)
+          ..color = r.color.withValues(alpha: alpha),
+      );
+      canvas.drawCircle(
+        r.origin,
+        6 + 52 * e,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.4
+          ..color = r.color.withValues(alpha: alpha * 0.45),
+      );
+    }
     for (final p in particles) {
       final t = ((now - p.born).inMilliseconds / Motion.burst.inMilliseconds).clamp(0.0, 1.0);
       final eased = 1 - math.pow(1 - t, 2).toDouble();

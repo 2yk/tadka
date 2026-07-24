@@ -7,7 +7,9 @@ numbers. Solo project, no backend, no ads/IAP.
 **Current state: M1 Flutter app, content-complete, heading to external testers.**
 The M0 fun-check passed — a full run was played and finished. Art and sound are deliberately
 deferred until the systems have been tested; everything on screen is placeholder emoji and
-generated SVG.
+generated SVG. The *presentation* is no longer bare, though: v1.1 shipped the effects layer —
+a fragment-shader ambient sky, real 3D perspective tilt on cards, foil shimmer, score
+shockwaves. Asset art is what remains deferred, not game feel.
 
 ## Layout
 
@@ -77,6 +79,11 @@ a balanced game invisibly.
   confirming the tests fail. If you add a suite, do this; a test that can't fail is decoration.
 - **DSL allow-lists** — utensil and blend effect keys are validated; an unknown key fails loudly
   rather than silently doing nothing.
+- **The ambient gate** — every endless animation (shader sky, card sway, foil, embers) must run
+  through `ambientEnabled()` in `apps/mobile/lib/widgets/ambient.dart`. A repeating controller
+  outside that gate schedules frames forever, which hangs every `pumpAndSettle` in the widget
+  suite and burns battery idling. The gate is closed under `FLUTTER_TEST` and reduced motion;
+  effects then render one static frame instead of disappearing.
 
 `web/game-core.mjs` must stay a byte-for-byte extract of `tadka.html`:
 `node tools/extract-core.mjs --check`. CI runs it first, because drift there invalidates
@@ -153,8 +160,8 @@ Load-bearing balance facts, hard-won — don't undo without re-simming:
 ## Known gaps
 
 - **No sound.** Deliberately excluded for now.
-- **Art is placeholder** — emoji and generated SVG. Fraunces/Inter aren't bundled, so display
-  type falls back to a platform serif.
+- **Art is placeholder** — emoji and generated SVG (the effects layer is real; the *assets*
+  aren't). Fraunces/Inter aren't bundled, so display type falls back to a platform serif.
 - **Nothing is gated right now** — `kShowAllContent` is on for internal testing. Underneath it
   the ladder still gates 24 of 95 utensils, which is short of the concept doc's ~60% locked at
   launch; that number is a launch-tuning decision to take when the flag goes off.

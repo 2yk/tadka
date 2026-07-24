@@ -19,6 +19,7 @@ import 'screens/start_screen.dart';
 import 'screens/summary_screen.dart';
 import 'theme.dart';
 import 'widgets/juice.dart';
+import 'widgets/midnight_background.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -107,30 +108,35 @@ class _GameRootState extends State<GameRoot> with WidgetsBindingObserver {
       Phase.summary || Phase.victory => SummaryScreen(controller: c),
     };
 
+    // The living sky mounts here, outside the AnimatedSwitcher, so the world persists
+    // across screens instead of resetting with each phase change.
     return Scaffold(
       backgroundColor: T.bg,
-      body: ParticleField(
-        controller: _particles,
-        child: ShakeBox(
-          controller: _shake,
-          child: Stack(
-            children: [
-              AnimatedSwitcher(
-                duration: Motion.screenFade,
-                switchInCurve: Curves.easeOut,
-                switchOutCurve: Curves.easeIn,
-                transitionBuilder: (child, anim) => FadeTransition(
-                  opacity: anim,
-                  child: SlideTransition(
-                    position: Tween(begin: const Offset(0, 0.03), end: Offset.zero).animate(anim),
-                    child: child,
+      body: MidnightBackground(
+        child: ParticleField(
+          controller: _particles,
+          child: ShakeBox(
+            controller: _shake,
+            child: Stack(
+              children: [
+                AnimatedSwitcher(
+                  duration: Motion.screenFade,
+                  switchInCurve: Curves.easeOut,
+                  switchOutCurve: Curves.easeIn,
+                  transitionBuilder: (child, anim) => FadeTransition(
+                    opacity: anim,
+                    child: SlideTransition(
+                      position:
+                          Tween(begin: const Offset(0, 0.03), end: Offset.zero).animate(anim),
+                      child: child,
+                    ),
                   ),
+                  child: KeyedSubtree(key: ValueKey(c.phase), child: screen),
                 ),
-                child: KeyedSubtree(key: ValueKey(c.phase), child: screen),
-              ),
-              if (c.toasts.isNotEmpty)
-                _UnlockToast(message: c.toasts.first, onDismiss: c.dismissToast),
-            ],
+                if (c.toasts.isNotEmpty)
+                  _UnlockToast(message: c.toasts.first, onDismiss: c.dismissToast),
+              ],
+            ),
           ),
         ),
       ),

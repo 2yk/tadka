@@ -14,6 +14,7 @@ import '../widgets/buttons.dart';
 import '../widgets/coach_panel.dart';
 import '../widgets/ingredient_card.dart';
 import '../widgets/juice.dart';
+import '../widgets/tilt.dart';
 
 class ServiceScreen extends StatefulWidget {
   const ServiceScreen({
@@ -38,11 +39,28 @@ class _ServiceScreenState extends State<ServiceScreen> {
   /// Anchor for where a cooked dish resolves, so cards have somewhere to fly to.
   final GlobalKey _panelKey = GlobalKey();
 
+  /// Anchor on the score counter, so the landing shockwave rings the number itself.
+  final GlobalKey _scoreKey = GlobalKey();
+
   /// Blocks input while the cook animation plays, so a double-tap can't cook twice.
   bool _busy = false;
   gc.ScoreResult? _toast;
 
   GlobalKey _keyFor(int i) => _cardKeys.putIfAbsent(i, GlobalKey.new);
+
+  /// The count-up just landed on its final number — mark the moment with a shockwave.
+  /// Gated on the toast so the count-DOWN to zero at the start of a new service is silent.
+  void _scoreLanded() {
+    if (_toast == null) return;
+    final box = _scoreKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null) return;
+    final at = box.localToGlobal(box.size.center(Offset.zero));
+    final run = widget.controller.run;
+    final hit = run != null && run.target > 0 && run.score >= run.target;
+    widget.particles
+      ..ring(at, hit ? T.good : T.brass)
+      ..burst(at, hit ? T.good : T.brassLight);
+  }
 
   /// Sends the played cards up into the dish panel.
   ///
@@ -152,7 +170,7 @@ class _ServiceScreenState extends State<ServiceScreen> {
             onHelp: c.openHelp,
           ),
           const SizedBox(height: 10),
-          _ScoreBar(run: run),
+          _ScoreBar(run: run, scoreKey: _scoreKey, onLanded: _scoreLanded),
           const SizedBox(height: 8),
           _UtensilRack(run: run),
           const SizedBox(height: 12),
@@ -415,9 +433,11 @@ class _ServicePip extends StatelessWidget {
 }
 
 class _ScoreBar extends StatelessWidget {
-  const _ScoreBar({required this.run});
+  const _ScoreBar({required this.run, this.scoreKey, this.onLanded});
 
   final gc.RunState run;
+  final GlobalKey? scoreKey;
+  final VoidCallback? onLanded;
 
   @override
   Widget build(BuildContext context) {
@@ -429,7 +449,13 @@ class _ScoreBar extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.end,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            CountUpScore(value: run.score, size: 40, color: hit ? T.good : T.brass),
+            CountUpScore(
+              key: scoreKey,
+              value: run.score,
+              size: 40,
+              color: hit ? T.good : T.brass,
+              onArrive: onLanded,
+            ),
             Padding(
               padding: const EdgeInsets.only(bottom: 5, left: 6),
               child: Text('/ ${formatScore(run.target)}', style: T.bodyDim.copyWith(fontSize: 15)),
@@ -562,6 +588,7 @@ class _DishToast extends StatelessWidget {
       builder: (context, t, child) => Transform.scale(scale: 0.9 + 0.1 * t, child: Opacity(opacity: t.clamp(0, 1), child: child)),
       child: _Panel(
         border: T.brass,
+        glow: T.brass,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -591,10 +618,13 @@ class _DishToast extends StatelessWidget {
 }
 
 class _Panel extends StatelessWidget {
-  const _Panel({required this.child, this.border});
+  const _Panel({required this.child, this.border, this.glow});
 
   final Widget child;
   final Color? border;
+
+  /// Halo behind the panel — the dish toast earns one so the payoff moment radiates.
+  final Color? glow;
 
   @override
   Widget build(BuildContext context) => Container(
@@ -606,6 +636,10 @@ class _Panel extends StatelessWidget {
       color: T.panel,
       borderRadius: BorderRadius.circular(12),
       border: Border.all(color: border ?? T.line, width: border == null ? 1 : 1.5),
+      boxShadow: [
+        if (glow != null)
+          BoxShadow(color: glow!.withValues(alpha: 0.30), blurRadius: 26, spreadRadius: 2),
+      ],
     ),
     child: child,
   );
@@ -669,20 +703,30 @@ class _Hand extends StatelessWidget {
                         1,
                         curve: Curves.easeOutCubic,
                       ),
+                      // Cards flip up out of the table in perspective as they rise —
+                      // dealt, not faded in.
                       builder: (context, t, child) => Opacity(
                         opacity: t.clamp(0.0, 1.0),
-                        child: Transform.translate(
-                          offset: Offset(0, 30 * (1 - t)),
+                        child: Transform(
+                          alignment: Alignment.bottomCenter,
+                          transform: Matrix4.identity()
+                            ..setEntry(3, 2, 0.0016)
+                            ..translateByDouble(0, 30 * (1 - t), 0, 1)
+                            ..rotateX(0.62 * (1 - t)),
                           child: child,
                         ),
                       ),
-                      child: IngredientCard(
-                        key: keyFor(i),
-                        card: run.hand[i],
-                        width: cardW,
-                        selected: selected.contains(i),
-                        debuffed: run.critic?.debuff == run.hand[i].family,
-                        onTap: enabled ? () => onTap(i) : null,
+                      child: Tilt3D(
+                        phase: i * 0.9,
+                        glossRadius: BorderRadius.circular(10),
+                        child: IngredientCard(
+                          key: keyFor(i),
+                          card: run.hand[i],
+                          width: cardW,
+                          selected: selected.contains(i),
+                          debuffed: run.critic?.debuff == run.hand[i].family,
+                          onTap: enabled ? () => onTap(i) : null,
+                        ),
                       ),
                     ),
                   ),
@@ -719,6 +763,7 @@ class _ActionBar extends StatelessWidget {
         child: PressableButton(
           enabled: canCook,
           onTap: onCook,
+          glow: true,
           height: 56,
           child: Text(
             'COOK  ($cooksLeft)',

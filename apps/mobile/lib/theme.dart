@@ -130,6 +130,9 @@ abstract final class Motion {
   static const burstMin = 6;
   static const burstMax = 10;
 
+  /// Shockwave ring when a score lands.
+  static const ring = Duration(milliseconds: 520);
+
   /// Screen shake scales with the multiplier: 3px base, +1px per extra multiple, cap 8px.
   static const shake = Duration(milliseconds: 120);
   static double shakePixels(double multiplier) =>
